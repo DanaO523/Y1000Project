@@ -1,0 +1,301 @@
+options(stringsAsFactors = F)
+library(clusterProfiler)
+library(enrichplot)
+library(ggplot2)
+
+BackKEGG = read.csv("Y1000KEGG_m.csv", header = TRUE, check.names = F)
+GenSpec = read.csv("Classification_df_2022-10-14.csv")
+PhenotypedStrains = read.csv("ObsoleteAnalysis/Genome_Phenotyped_Yeasts_2022-08-04_.csv", header = TRUE)
+GENERALISTS = GenSpec[which(GenSpec$Classification == "Generalist"), "Strain"]
+SPECIALISTS = GenSpec[which(GenSpec$Classification == "Specialist"), "Strain"]
+
+GenKEGG = BackKEGG[, which(colnames(BackKEGG) %in% GENERALISTS)]
+SpecKEGG = BackKEGG[, which(colnames(BackKEGG) %in% SPECIALISTS)]
+
+BackKEGG = as.matrix(BackKEGG)
+BackKEGG[which(BackKEGG > 0)] = 1
+BackKEGG = BackKEGG[, which(colnames(BackKEGG) %in% PhenotypedStrains$x)]
+
+Y1000KEGG = rowSums(BackKEGG, na.rm = TRUE)
+Y1000KEGG = sort(Y1000KEGG, decreasing = TRUE)
+Y1000KEGG = Y1000KEGG[-which(Y1000KEGG == 0)]
+
+
+GeneralistKEGG = rowSums(GenKEGG, na.rm = TRUE)
+GeneralistKEGG = sort(GeneralistKEGG, decreasing = TRUE)
+GeneralistKEGG = GeneralistKEGG[-which(GeneralistKEGG == 0)]
+
+SpecialistKEGG = rowSums(SpecKEGG, na.rm = TRUE)
+SpecialistKEGG = sort(SpecialistKEGG, decreasing = TRUE)
+SpecialistKEGG = SpecialistKEGG[-which(SpecialistKEGG == 0)]
+
+##### Generalist/Specialist all annotation presence vs. all Y1000+ KEGG annotations
+Y1000_GeneralistEnrichment = enrichKEGG(names(GeneralistKEGG), universe = names(Y1000KEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+Y1000_SpecialistEnrichment = enrichKEGG(names(SpecialistKEGG), universe = names(Y1000KEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+
+pdf(paste("Y1000_GeneralistEnrichment_", Sys.Date(), ".pdf", sep = ""), height = 15)
+dotplot(Y1000_GeneralistEnrichment, showCategory=30)
+dev.off()
+
+png(paste("Y1000_GeneralistEnrichment_", Sys.Date(), ".png", sep = ""), height = 900, width = 900)
+dotplot(Y1000_GeneralistEnrichment, showCategory=30)
+dev.off()
+
+
+pdf(paste("Y1000_SpecialistEnrichment_", Sys.Date(), ".pdf", sep = ""), height = 15)
+dotplot(Y1000_SpecialistEnrichment, showCategory=30)
+#barplot(Y1000_SpecialistEnrichment, drop = TRUE, showCategory = 30)
+dev.off()
+
+png(paste("Y1000_SpecialistEnrichment_", Sys.Date(), ".png", sep = ""), height = 900, width = 900)
+dotplot(Y1000_SpecialistEnrichment, showCategory=30)
+dev.off()
+
+##### Generalist/Specialist missing or present annotations in 20% of individuals where the background is all-nongeneralists or all-nonspecialists 
+Generalists_Y1000 = BackKEGG[,which(colnames(BackKEGG) %in% colnames(GenKEGG))]
+Specialists_Y1000 = BackKEGG[,which(colnames(BackKEGG) %in% colnames(SpecKEGG))]
+
+GeneralistKEGG_All_Y1000 = colSums(Generalists_Y1000[,2:ncol(Generalists_Y1000)], na.rm = T)
+GeneralistKEGG_All_Y1000 = sort(GeneralistKEGG_All_Y1000, decreasing = TRUE)
+SpecialistsKEGG_All_Y1000 = colSums(Specialists_Y1000[,2:ncol(Specialists_Y1000)], na.rm = T)
+SpecialistsKEGG_All_Y1000 = sort(SpecialistsKEGG_All_Y1000, decreasing = TRUE)
+
+
+GenNorm = rbind(BackKEGG, GenKEGG)
+SpecNorm = rbind(BackKEGG, SpecKEGG)
+GenNorm_All_Y1000 = colSums(GenNorm[, 2:ncol(GenNorm)], na.rm = TRUE)
+GenNorm_All_Y1000 = sort(GenNorm_All_Y1000, decreasing = TRUE)
+SpecNorm_All_Y1000 = colSums(SpecNorm[, 2:ncol(SpecNorm)], na.rm = TRUE)
+SpecNorm_All_Y1000 = sort(SpecNorm_All_Y1000, decreasing = TRUE)
+
+MissingGeneralists_Y1000 = GeneralistKEGG_All_Y1000[which(GeneralistKEGG_All_Y1000 <= (.20 * nrow(GenNorm)))] 
+MissingSpecialists_Y1000 = SpecialistsKEGG_All_Y1000[which(SpecialistsKEGG_All_Y1000 <= (.20 * nrow(Specialists_Y1000)))] 
+MissingGenNorm_Y1000 = GenNorm_All_Y1000[which(GenNorm_All_Y1000 <= (.20 * nrow(GenNorm)))]
+MissingSpecNorm_Y1000 = SpecNorm_All_Y1000[which(SpecNorm_All_Y1000 <= (.20 * nrow(SpecNorm)))]
+
+MissingOnlyGeneralists_Y1000 = MissingGeneralists_Y1000[-which(names(MissingGeneralists_Y1000) %in% names(MissingSpecNorm_Y1000))]
+MissingOnlySpecialists_Y1000 = MissingSpecialists_Y1000[-which(names(MissingSpecialists_Y1000) %in% names(MissingGenNorm_Y1000))]
+
+PresentGeneralists_Y1000 = GeneralistKEGG_All_Y1000[which(GeneralistKEGG_All_Y1000 >= (.20 * nrow(Generalists_Y1000)))]
+PresentSpecialists_Y1000 = SpecialistsKEGG_All_Y1000[which(SpecialistsKEGG_All_Y1000 >= (.20 * nrow(Specialists_Y1000)))]
+PresentGenNorm_Y1000 = GenNorm_All_Y1000[which(GenNorm_All_Y1000 >= (.20 * nrow(GenNorm)))]
+PresentSpecNorm_Y1000 = SpecNorm_All_Y1000[which(SpecNorm_All_Y1000 >= (.20 * nrow(SpecNorm)))]
+
+
+PresentOnlyGeneralists_Y1000 = PresentGeneralists_Y1000[-which(names(PresentGeneralists_Y1000) %in% names(PresentSpecNorm_Y1000))]
+PresentOnlySpecialists_Y1000 = PresentSpecialists_Y1000[-which(names(PresentSpecialists_Y1000) %in% names(PresentGenNorm_Y1000))]
+
+GenMiss_Y1000 = data.frame(KEGG = names(MissingOnlyGeneralists_Y1000), Class = rep("Generalist", length(MissingOnlyGeneralists_Y1000)), Group = rep("Missing", length(MissingOnlyGeneralists_Y1000)) )
+GenPres_Y1000 = data.frame(KEGG = names(PresentOnlyGeneralists_Y1000), Class = rep("Generalist", length(PresentOnlyGeneralists_Y1000)), Group = rep("Present", length(PresentOnlyGeneralists_Y1000)) )
+SpecMiss_Y1000 = data.frame(KEGG = names(MissingOnlySpecialists_Y1000), Class = rep("Specialist", length(MissingOnlySpecialists_Y1000)), Group = rep("Missing", length(MissingOnlySpecialists_Y1000)) )
+SpecPres_Y1000 = data.frame(KEGG = names(PresentOnlySpecialists_Y1000), Class = rep("Specialist", length(PresentOnlySpecialists_Y1000)), Group = rep("Present", length(PresentOnlySpecialists_Y1000)) )
+
+
+Class_Y1000_df = rbind(GenMiss_Y1000, GenPres_Y1000, SpecMiss_Y1000,  SpecPres_Y1000)
+Class_Y1000_Compare = compareCluster(KEGG~Class+Group, data = Class_Y1000_df, fun = "enrichKEGG", organism = "ko", keyType = "kegg", pAdjustMethod = "fdr", universe = names(Y1000KEGG))
+Class_Y1000_Compare2 = compareCluster(KEGG~Class+Group, data = Class_Y1000_df, fun = "enrichKEGG", organism = "ko", keyType = "kegg", pAdjustMethod = "fdr")
+
+png(paste("ClassCompare_Y1000_20Per", Sys.Date(), ".png", sep = ""), height = 480, width = 480)
+dotplot(Class_Y1000_Compare, x = "Group") + facet_grid(~Class)
+dotplot(Class_Y1000_Compare2, x = "Group") + facet_grid(~Class)
+dev.off()
+
+
+##### Generalist vs Specialist NO normal yeast 
+
+ClassKEGG = BackKEGG[,which(colnames(BackKEGG) %in% c(colnames(GenKEGG), colnames(SpecKEGG)))]
+ClassificationKEGG = rowSums(ClassKEGG, na.rm = TRUE)
+ClassificationKEGG = ClassificationKEGG[which(ClassificationKEGG > 0)]
+ClassificationKEGG = sort(ClassificationKEGG, decreasing = TRUE)
+
+GenSpec_GeneralistEnrichment = enrichKEGG(names(GeneralistKEGG), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+GenSpec_SpecialistEnrichment = enrichKEGG(names(SpecialistKEGG), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+
+Class_list = list(names(GeneralistKEGG), names(SpecialistKEGG))
+names(Class_list) = c("Generalist", "Specialist")
+
+
+pdf(paste("GenSpec_GeneralistEnrichment_", Sys.Date(), ".pdf", sep = ""), height = 20)
+dotplot(GenSpec_GeneralistEnrichment, showCategory=50)
+barplot(GenSpec_GeneralistEnrichment, showCategory=50) 
+dev.off()
+
+pdf(paste("GenSpec_SpecialistEnrichment_", Sys.Date(), ".pdf", sep = ""), height = 20)
+dotplot(GenSpec_SpecialistEnrichment, showCategory=50)
+barplot(GenSpec_SpecialistEnrichment, showCategory=50) 
+
+dev.off()
+
+png(paste("GenSpec_GeneralistEnrichment_", Sys.Date(), ".png", sep = ""), height = 900, width = 900)
+dotplot(GenSpec_GeneralistEnrichment, showCategory=30)
+dev.off()
+
+png(paste("GenSpec_SpecialistEnrichment_", Sys.Date(), ".png", sep = ""),  height = 900, width = 900)
+dotplot(GenSpec_SpecialistEnrichment, showCategory=30)
+dev.off()
+
+Generalists = BackKEGG[,which(colnames(BackKEGG) %in% colnames(GenKEGG))]
+Specialists = BackKEGG[,which(colnames(BackKEGG) %in% colnames(SpecKEGG))]
+
+GeneralistKEGG_All = rowSums(Generalists)
+SpecialistsKEGG_All = rowSums(Specialists)
+
+MissingGeneralists = GeneralistKEGG_All[which(GeneralistKEGG_All <= (.20 * ncol(Generalists)))] 
+MissingSpecialists = SpecialistsKEGG_All[which(SpecialistsKEGG_All <= (.20 * ncol(Specialists)))] 
+
+MissingOnlyGeneralists = MissingGeneralists[-which(names(MissingGeneralists) %in% names(MissingSpecialists))]
+MissingOnlySpecialists = MissingSpecialists[-which(names(MissingSpecialists) %in% names(MissingGeneralists))]
+
+PresentGeneralists = GeneralistKEGG_All[which(GeneralistKEGG_All > (.20 * ncol(Generalists)))]
+PresentSpecialists = SpecialistsKEGG_All[which(SpecialistsKEGG_All > (.20 * ncol(Specialists)))]
+
+PresentOnlyGeneralists = PresentGeneralists[-which(names(PresentGeneralists) %in% names(PresentSpecialists))]
+PresentOnlySpecialists = PresentSpecialists[-which(names(PresentSpecialists) %in% names(PresentGeneralists))]
+
+GenMiss = data.frame(KEGG = names(MissingOnlyGeneralists), Class = rep("Generalist", length(MissingOnlyGeneralists)), Group = rep("Missing", length(MissingOnlyGeneralists)) )
+GenPres = data.frame(KEGG = names(PresentOnlyGeneralists), Class = rep("Generalist", length(PresentOnlyGeneralists)), Group = rep("Present", length(PresentOnlyGeneralists)) )
+SpecMiss = data.frame(KEGG = names(MissingOnlySpecialists), Class = rep("Specialist", length(MissingOnlySpecialists)), Group = rep("Missing", length(MissingOnlySpecialists)) )
+SpecPres = data.frame(KEGG = names(PresentOnlySpecialists), Class = rep("Specialist", length(PresentOnlySpecialists)), Group = rep("Present", length(PresentOnlySpecialists)) )
+
+
+Class_df = rbind(GenMiss, GenPres, SpecMiss,  SpecPres)
+ClassCompare = compareCluster(KEGG~Class+Group, data = Class_df, fun = "enrichKEGG", organism = "ko", keyType = "kegg", pAdjustMethod = "fdr", universe = names(ClassificationKEGG))
+ClassCompare2 = compareCluster(KEGG~Class+Group, data = Class_df, fun = "enrichKEGG", organism = "ko", keyType = "kegg", pAdjustMethod = "fdr")
+
+png(paste("ClassCompare_20Per_GenSpecBkg", Sys.Date(), ".png", sep = ""))
+dotplot(ClassCompare, x = "Group") + facet_grid(~Class)
+dev.off()
+
+pdf(paste("ClassCompare_20Per_GenSpecBkg", Sys.Date(), ".pdf", sep = ""))
+dotplot(ClassCompare, x = "Group") + facet_grid(~Class)
+dev.off()
+
+write.csv(ClassCompare, file = paste("GenSpec_ClassComparison_", Sys.Date(), ".csv", sep = ""))
+
+############################################################
+NoCore_SpecComm = read.csv("NoCore_SpecialistCommunity_KEGG_2022-10-15.csv", header = TRUE)
+NoCore_GenComm = read.csv("NoCore_GeneralistCommunity_KEGG_2022-10-15.csv", header = TRUE)
+NoCore_SpecSingleComm = read.csv("NoCore_Specialist_Single_Community_KEGG_2022-10-15.csv", header = TRUE)
+NoCore_GenSingleComm = read.csv("NoCore_Generalist_Single_Community_KEGG_2022-10-15.csv", header = TRUE)
+
+GeneralistKEGG2 = GeneralistKEGG[which(GeneralistKEGG == ncol(Generalists))]
+SpecialistKEGG2 = SpecialistKEGG[which(SpecialistKEGG == ncol(Specialists))]
+
+Y1000_Generalist_spcBkgEnrichment = enrichKEGG(names(GeneralistKEGG2), universe = names(SpecialistKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+Y1000_Specialist_genBkgEnrichment = enrichKEGG(names(SpecialistKEGG2), universe = names(GeneralistKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+
+#pdf(paste("Y1000_GeneralistAllPre_specBkg_Enrichment_", Sys.Date(), ".pdf", sep = ""),  height = 15)
+#dotplot(Y1000_Generalist_spcBkgEnrichment, showCategory=30)
+#dev.off()
+
+#png(paste("Y1000_GeneralistAllPre_specBkg_Enrichment_", Sys.Date(), ".png", sep = ""),  height = 480, width = 480)
+#dotplot(Y1000_Generalist_spcBkgEnrichment, showCategory=30)
+#dev.off()
+
+#png(paste("Y1000_SpecialistAllPre_genBkg_Enrichment_", Sys.Date(), ".png", sep = ""),  height = 480, width = 480)
+#dotplot(Y1000_Specialist_genBkgEnrichment, showCategory=30)
+#dev.off()
+
+################################### Core Metabolism Enrichment 
+CoreMetabolism = read.csv("CoreMetabolicGenes_2022-10-15.csv", header = TRUE)
+CoreMetabolismEnrichment = enrichKEGG(CoreMetabolism$x, universe = names(Y1000KEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+png(paste("CoreMetabolicGenes_", Sys.Date(), ".png", sep = ""), height = 480, width = 480)
+dotplot(CoreMetabolismEnrichment, showCategory=50)
+dev.off()
+
+########## Machine Learning Analyses ############
+Generalist_TopML = read.csv("GeneralistPres_100ML.csv", header = TRUE)
+Specialist_TopML = read.csv("SpecialistPres_100ML.csv", header = TRUE)
+KO_EC = read.csv("EnzymeKO_merge.csv", header = TRUE)
+GenSpec_ML_Features = read.csv("MLKEGGFeatures_GenSpec_8-10-2022.csv", header = TRUE)
+Top440_ML = read.delim("Top440carb.txt", header = F)
+TopNitro440_ML = read.delim("Top440nitro.txt", header = F)
+
+Generalist_AllKEGGML = read.csv("Generalist_allkeg_pres_100.csv", header = TRUE)
+Specialist_ALLKEGGML = read.csv("Specialist_allkeg_pres_100.csv", header = TRUE)
+
+GenML_KO = KO_EC[which(KO_EC$Enzyme %in% Generalist_TopML$Generalist), ]
+Spec_ML_KO = KO_EC[which(KO_EC$Enzyme %in% Specialist_TopML$Specialist), ]
+
+GenMLKEGG_Enrich = enrichKEGG(unique(GenML_KO$X.KO), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+#GenMLKEGG_Enrich = enrichKEGG(GenML_KO$X.KO,  keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+SpecMLKEGG_Enrich = enrichKEGG(unique(Spec_ML_KO$X.KO), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+#SpecMLKEGG_Enrich = enrichKEGG(Spec_ML_KO$X.KO, keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+
+#pdf("MLKEGG_Enrich_top25_NoBack.pdf", height = 15)
+dotplot(GenMLKEGG_Enrich, showCategory=50)
+dotplot(SpecMLKEGG_Enrich, showCategory=50)
+
+#dev.off()
+
+GenMLALLKEGG_Enrich = enrichKEGG(unique(Generalist_AllKEGGML$GenKegg), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+SpecMLALLKEGG_Enrich = enrichKEGG(unique(Specialist_ALLKEGGML$SpecKegg), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+
+GenSpecMLFeat_Enrich = enrichKEGG(unique(GenSpec_ML_Features$KEGG), universe = names(Y1000KEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+
+### Top 440 predictable Enzymes
+KOEC_df = read.csv("EnzymeInfo_6-17-2022.csv", header = TRUE) 
+Top440_ML$V1 = trimws(Top440_ML$V1, which = "both")
+Top440_ML2 = merge(Top440_ML, KOEC_df, by.x = "V1", by.y = "EC.number")
+
+Top440_Enrich = enrichKEGG(unique(Top440_ML2$X.KO), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+dotplot(Top440_Enrich, showCategory=100)
+
+TopNitro440_ML$V1 = trimws(TopNitro440_ML$V1, which = "both")
+
+Samsies_CarbNitr = intersect(Top440_ML$V1, TopNitro440_ML$V1)
+Diff_Carb = setdiff(Top440_ML$V1, TopNitro440_ML$V1)
+Diff_Carb = data.frame(Diff_Carb)
+KO_Diff_Carb = merge(Diff_Carb, KOEC_df, by.x = "Diff_Carb", by.y = "EC.number")
+
+
+Diff_Nitr = setdiff(TopNitro440_ML$V1, Top440_ML$V1)
+Diff_Nitr = data.frame(Diff_Nitr)
+KO_Diff_NitrCarb = merge(Diff_Nitr, KOEC_df, by.x = "Diff_Nitr", by.y = "EC.number")
+
+ECComb_df = data.frame(c(Top440_ML$V1, TopNitro440_ML$V1))
+colnames(ECComb_df) = "EC"
+ECComb_df = unique(ECComb_df)
+KO_All_NitrCarb = merge(ECComb_df, KOEC_df, by.x = "EC", by.y = "EC.number")
+
+
+DiffCarb_Enrich = enrichKEGG(unique(KO_Diff_Carb$X.KO), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+dotplot(DiffCarb_Enrich, showCategory=100)
+
+DiffNitr_Enrich = enrichKEGG(unique(KO_Diff_NitrCarb$X.KO), universe = names(ClassificationKEGG), keyType = "kegg", organism = "ko",  pAdjustMethod = "fdr")
+dotplot(DiffNitr_Enrich, showCategory=100)
+
+
+Y1000KEGG_m = read.csv("KEGGAnnot_m,_2022-08-04_.csv", header = TRUE, row.names = 1, check.names = F)
+
+Y1000KEGG_m = as.matrix(Y1000KEGG_m)
+Y1000KEGG_m[which(Y1000KEGG_m > 0)] = 1
+Y1000KEGG_m = Y1000KEGG_m[, which(colnames(Y1000KEGG_m) %in% PhenotypedStrains$x)]
+
+GENERALIST = colnames(Generalists)
+SPECIALIST = colnames(Specialists)
+DROPFOROTHER = c(GENERALIST, SPECIALIST)
+MLKEGGFEATURES = unique(GenSpec_ML_Features$KEGG)
+
+MLFeatures_df = data.frame(KEGG = character(), 
+                           Generalist = numeric(), 
+                           Specialist = numeric(),
+                           Standard = numeric())
+
+for(i in 1:length(MLKEGGFEATURES)){
+  GENTEMP = Y1000KEGG_m[which(rownames(Y1000KEGG_m) == MLKEGGFEATURES[[i]]), which(colnames(Y1000KEGG_m) %in% GENERALIST)]
+  SPECTEMP = Y1000KEGG_m[which(rownames(Y1000KEGG_m) == MLKEGGFEATURES[[i]]),which(colnames(Y1000KEGG_m) %in% SPECIALIST)]
+  STDTEMP = Y1000KEGG_m[which(rownames(Y1000KEGG_m) == MLKEGGFEATURES[[i]]), -which(colnames(Y1000KEGG_m) %in% DROPFOROTHER)]
+  MLFeatures_df[i,1] = MLKEGGFEATURES[[i]]
+  MLFeatures_df[i,2] = sum(GENTEMP, na.rm = T)
+  MLFeatures_df[i,3] = sum(SPECTEMP, na.rm = T)
+  MLFeatures_df[i,4] = sum(STDTEMP, na.rm = T)
+}
