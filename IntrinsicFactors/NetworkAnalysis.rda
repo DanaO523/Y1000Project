@@ -1,0 +1,239 @@
+options(StringAsFactors = FALSE)
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+library(data.table)
+
+Y1000Network_df = read.csv("Variable_Y1000_NetworkStats_df_2022-08-09.csv", header = TRUE, check.names = F)
+
+GenKEGG = read.csv("GeneralistKEGG_m_2022-08-06.csv", header = TRUE, row.names = 1, check.names = F)
+SpecKEGG = read.csv("SpecialistKEGG_m_2022-08-08.csv", header = TRUE, row.names = 1, check.names = F)
+
+GENERALIST = colnames(GenKEGG)
+SPECIALIST = colnames(SpecKEGG)
+
+Y1000Network_df$Classification = rep("Normal", nrow(Y1000Network_df))
+Y1000Network_df[which(Y1000Network_df$PU %in% GENERALIST), "Classification"] = "Generalist"
+Y1000Network_df[which(Y1000Network_df$PU %in% SPECIALIST), "Classification"] = "Specialist"
+
+GenSpec_Network_df = Y1000Network_df[which(Y1000Network_df$Classification %in% c("Generalist", "Specialist")),]
+GenSpec_Network_df = GenSpec_Network_df[,-1]
+
+GS_Rnx_Edge <- GenSpec_Network_df %>%
+  pairwise_t_test(RnxEdgeCount ~ Classification, p.adjust.method = "bonferroni")
+GS_Rnx_Edge
+GS_Rnx_Edge$custom.label <- ifelse(GS_Rnx_Edge$p.adj <= 0.05, GS_Rnx_Edge$p.adj, "ns")
+GS_Rnx_Edge <- GS_Rnx_Edge %>% add_xy_position(x = "Classification")
+
+
+bp_Rnx_Edge <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "RnxEdgeCount", fill = "Classification", 
+                             palette = c("#02466e", "#9f5691"))
+bp_Rnx_Edge <- bp_Rnx_Edge + 
+  stat_pvalue_manual(GS_Rnx_Edge, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_Rnx_Edge.pdf", height = 5, width = 5)
+
+fwrite(GS_Rnx_Edge, file ="GS_Rnx_Edge.csv")
+
+#################
+GS_Rnx_Modularity <- GenSpec_Network_df %>%
+  pairwise_t_test(Rnx_Modularity ~ Classification, p.adjust.method = "bonferroni")
+GS_Rnx_Modularity
+GS_Rnx_Modularity$custom.label <- ifelse(GS_Rnx_Modularity$p.adj <= 0.05, GS_Rnx_Modularity$p.adj, "ns")
+GS_Rnx_Modularity <- GS_Rnx_Modularity %>% add_xy_position(x = "Classification")
+
+
+bp_Rnx_Modul <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "Rnx_Modularity", fill = "Classification", 
+                         palette = c("#02466e", "#9f5691"))
+bp_Rnx_Modul <- bp_Rnx_Modul + 
+  stat_pvalue_manual(GS_Rnx_Modularity, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_Rnx_Modularity.pdf", height = 5, width = 5)
+
+fwrite(GS_Rnx_Modularity, file ="GS_Rnx_Modularity.csv")
+
+
+#################
+GS_Rnx_Diameter <- GenSpec_Network_df %>%
+  pairwise_t_test(Rnx_Diameter ~ Classification, p.adjust.method = "bonferroni")
+GS_Rnx_Diameter
+GS_Rnx_Diameter$custom.label <- ifelse(GS_Rnx_Diameter$p.adj <= 0.05, GS_Rnx_Diameter$p.adj, "ns")
+GS_Rnx_Diameter <- GS_Rnx_Diameter %>% add_xy_position(x = "Classification")
+
+
+bp_Rnx_Diameter <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "Rnx_Diameter", fill = "Classification", 
+                          palette = c("#02466e", "#9f5691"))
+bp_Rnx_Diameter <- bp_Rnx_Diameter + 
+  stat_pvalue_manual(GS_Rnx_Diameter, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_Rnx_Diameter.pdf", height = 5, width = 5)
+
+fwrite(GS_Rnx_Diameter, file ="GS_Rnx_Diameter.csv")
+
+#################
+GS_Rnx_Assortativity <- GenSpec_Network_df %>%
+  pairwise_t_test(Rnx_Assortativity ~ Classification, p.adjust.method = "bonferroni")
+GS_Rnx_Assortativity
+GS_Rnx_Assortativity$custom.label <- ifelse(GS_Rnx_Assortativity$p.adj <= 0.05, GS_Rnx_Assortativity$p.adj, "ns")
+GS_Rnx_Assortativity <- GS_Rnx_Assortativity %>% add_xy_position(x = "Classification")
+
+
+bp_Rnx_Assortativity <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "Rnx_Assortativity", fill = "Classification", 
+                             palette = c("#02466e", "#9f5691"))
+bp_Rnx_Assortativity <- bp_Rnx_Assortativity + 
+  stat_pvalue_manual(GS_Rnx_Assortativity, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_Rnx_Assortativity.pdf", height = 5, width = 5)
+
+fwrite(GS_Rnx_Assortativity, file ="GS_Rnx_Assortativity.csv")
+
+#################
+GS_Rnx_Betweenness <- GenSpec_Network_df %>%
+  pairwise_t_test(Rnx_Betweenness ~ Classification, p.adjust.method = "bonferroni")
+GS_Rnx_Betweenness
+GS_Rnx_Betweenness$custom.label <- ifelse(GS_Rnx_Betweenness$p.adj <= 0.05, GS_Rnx_Betweenness$p.adj, "ns")
+GS_Rnx_Betweenness <- GS_Rnx_Betweenness %>% add_xy_position(x = "Classification")
+
+
+bp_Rnx_Betweenness <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "Rnx_Betweenness", fill = "Classification", 
+                                  palette = c("#02466e", "#9f5691"))
+bp_Rnx_Betweenness <- bp_Rnx_Betweenness + 
+  stat_pvalue_manual(GS_Rnx_Betweenness, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_Rnx_Betweenness.pdf", height = 5, width = 5)
+
+fwrite(GS_Rnx_Betweenness, file ="GS_Rnx_Betweenness.csv")
+
+#################
+GS_Rnx_Density <- GenSpec_Network_df %>%
+  pairwise_t_test(Rnx_Density ~ Classification, p.adjust.method = "bonferroni")
+GS_Rnx_Density
+GS_Rnx_Density$custom.label <- ifelse(GS_Rnx_Density$p.adj <= 0.05, GS_Rnx_Density$p.adj, "ns")
+GS_Rnx_Density <- GS_Rnx_Density %>% add_xy_position(x = "Classification")
+
+
+bp_Rnx_Density <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "Rnx_Density", fill = "Classification", 
+                                palette = c("#02466e", "#9f5691"))
+bp_Rnx_Density <- bp_Rnx_Density + 
+  stat_pvalue_manual(GS_Rnx_Density, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_Rnx_Density.pdf", height = 5, width = 5)
+
+fwrite(GS_Rnx_Density, file ="GS_Rnx_Density.csv")
+
+
+ggarrange(bp_Rnx_Edge, bp_Rnx_Modul, bp_Rnx_Diameter, bp_Rnx_Assortativity, bp_Rnx_Betweenness, bp_Rnx_Density + rremove("x.text"), 
+          labels = c("A", "B", "C", "D", "E", "F"),
+          ncol = 3, nrow = 2)
+
+ggsave("All_Rnx_Stats.pdf", height = 15, width = 15)
+
+
+######### KEGG Network ###########
+GS_KEGG_Edge <- GenSpec_Network_df %>%
+  pairwise_t_test(KEGGEdgeCount ~ Classification, p.adjust.method = "bonferroni")
+GS_KEGG_Edge
+GS_KEGG_Edge$custom.label <- ifelse(GS_KEGG_Edge$p.adj <= 0.05, GS_KEGG_Edge$p.adj, "ns")
+GS_KEGG_Edge <- GS_KEGG_Edge %>% add_xy_position(x = "Classification")
+
+
+bp_KEGG_Edge <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "KEGGEdgeCount", fill = "Classification", 
+                         palette = c("#02466e", "#9f5691"))
+bp_KEGG_Edge <- bp_KEGG_Edge + 
+  stat_pvalue_manual(GS_KEGG_Edge, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_KEGG_Edge.pdf", height = 5, width = 5)
+
+fwrite(GS_KEGG_Edge, file ="GS_KEGG_Edge.csv")
+
+#################
+GS_KEGG_Modularity <- GenSpec_Network_df %>%
+  pairwise_t_test(KEGG_Modularity ~ Classification, p.adjust.method = "bonferroni")
+GS_KEGG_Modularity
+GS_KEGG_Modularity$custom.label <- ifelse(GS_KEGG_Modularity$p.adj <= 0.05, GS_KEGG_Modularity$p.adj, "ns")
+GS_KEGG_Modularity <- GS_KEGG_Modularity %>% add_xy_position(x = "Classification")
+
+
+bp_KEGG_Modul <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "KEGG_Modularity", fill = "Classification", 
+                          palette = c("#02466e", "#9f5691"))
+bp_KEGG_Modul <- bp_KEGG_Modul + 
+  stat_pvalue_manual(GS_KEGG_Modularity, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_KEGG_Modularity.pdf", height = 5, width = 5)
+
+fwrite(GS_KEGG_Modularity, file ="GS_KEGG_Modularity.csv")
+
+
+#################
+GS_KEGG_Diameter <- GenSpec_Network_df %>%
+  pairwise_t_test(KEGG_Diameter ~ Classification, p.adjust.method = "bonferroni")
+GS_KEGG_Diameter
+GS_KEGG_Diameter$custom.label <- ifelse(GS_KEGG_Diameter$p.adj <= 0.05, GS_KEGG_Diameter$p.adj, "ns")
+GS_KEGG_Diameter <- GS_KEGG_Diameter %>% add_xy_position(x = "Classification")
+
+
+bp_KEGG_Diameter <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "KEGG_Diameter", fill = "Classification", 
+                             palette = c("#02466e", "#9f5691"))
+bp_KEGG_Diameter <- bp_KEGG_Diameter + 
+  stat_pvalue_manual(GS_KEGG_Diameter, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_KEGG_Diameter.pdf", height = 5, width = 5)
+
+fwrite(GS_KEGG_Diameter, file ="GS_KEGG_Diameter.csv")
+
+#################
+GS_KEGG_Assortativity <- GenSpec_Network_df %>%
+  pairwise_t_test(KEGG_Assortativity ~ Classification, p.adjust.method = "bonferroni")
+GS_KEGG_Assortativity
+GS_KEGG_Assortativity$custom.label <- ifelse(GS_KEGG_Assortativity$p.adj <= 0.05, GS_KEGG_Assortativity$p.adj, "ns")
+GS_KEGG_Assortativity <- GS_KEGG_Assortativity %>% add_xy_position(x = "Classification")
+
+
+bp_KEGG_Assortativity <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "KEGG_Assortativity", fill = "Classification", 
+                                  palette = c("#02466e", "#9f5691"))
+bp_KEGG_Assortativity <- bp_KEGG_Assortativity + 
+  stat_pvalue_manual(GS_KEGG_Assortativity, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_KEGG_Assortativity.pdf", height = 5, width = 5)
+
+fwrite(GS_KEGG_Assortativity, file ="GS_KEGG_Assortativity.csv")
+
+#################
+GS_KEGG_Betweenness <- GenSpec_Network_df %>%
+  pairwise_t_test(KEGG_Betweenness ~ Classification, p.adjust.method = "bonferroni")
+GS_KEGG_Betweenness
+GS_KEGG_Betweenness$custom.label <- ifelse(GS_KEGG_Betweenness$p.adj <= 0.05, GS_KEGG_Betweenness$p.adj, "ns")
+GS_KEGG_Betweenness <- GS_KEGG_Betweenness %>% add_xy_position(x = "Classification")
+
+
+bp_KEGG_Betweenness <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "KEGG_Betweenness", fill = "Classification", 
+                                palette = c("#02466e", "#9f5691"))
+bp_KEGG_Betweenness <- bp_KEGG_Betweenness + 
+  stat_pvalue_manual(GS_KEGG_Betweenness, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_KEGG_Betweenness.pdf", height = 5, width = 5)
+
+fwrite(GS_KEGG_Betweenness, file ="GS_KEGG_Betweenness.csv")
+
+#################
+GS_KEGG_Density <- GenSpec_Network_df %>%
+  pairwise_t_test(KEGG_Density ~ Classification, p.adjust.method = "bonferroni")
+GS_KEGG_Density
+GS_KEGG_Density$custom.label <- ifelse(GS_KEGG_Density$p.adj <= 0.05, GS_KEGG_Density$p.adj, "ns")
+GS_KEGG_Density <- GS_KEGG_Density %>% add_xy_position(x = "Classification")
+
+
+bp_KEGG_Density <- ggboxplot(GenSpec_Network_df, x = "Classification", y = "KEGG_Density", fill = "Classification", 
+                            palette = c("#02466e", "#9f5691"))
+bp_KEGG_Density <- bp_KEGG_Density + 
+  stat_pvalue_manual(GS_KEGG_Density, label = "custom.label") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+ggsave("GS_KEGG_Density.pdf", height = 5, width = 5)
+
+fwrite(GS_KEGG_Density, file ="GS_KEGG_Density.csv")
+
+ggarrange(bp_KEGG_Edge, bp_KEGG_Modul, bp_KEGG_Diameter, bp_KEGG_Assortativity, bp_KEGG_Betweenness, bp_KEGG_Density + rremove("x.text"), 
+          labels = c("A", "B", "C", "D", "E", "F"),
+          ncol = 3, nrow = 2)
+
+ggsave("All_KEGG_Stats.pdf", height = 15, width = 15)
