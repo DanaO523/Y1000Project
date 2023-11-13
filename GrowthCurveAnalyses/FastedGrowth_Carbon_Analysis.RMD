@@ -1,0 +1,394 @@
+---
+title: "Non-glucophily and metabolic strategies"
+output: html_notebook
+---
+
+Do we see an enrichment for non-glucophilic traits in generalists or specialists
+```{r Nonglucophily analyses with generalists and specialists, message = FALSE, insert = FALSE, warning= FALSE}
+
+SugarData_df = unique(data.frame(Sugar_df[,c(1:3)]))
+SugarData_df$NonGlucophilic = rep("Glucophilic", nrow(SugarData_df))
+NONGLUCO = Nonglucophily[which(Nonglucophily$Non.glucophily >= 1), "Strain"]
+SugarData_df[which(SugarData_df$PU %in% NONGLUCO), "NonGlucophilic"] = "Non-glucophilic"
+SugarData_df$Strategy = rep("Normal", nrow(SugarData_df))
+SugarData_df[which(SugarData_df$PU %in% Generalist_df$Strain), "Strategy"] = "Generalist"
+SugarData_df[which(SugarData_df$PU %in% Specialist_df$Strain), "Strategy"] = "Specialist"
+
+STRATEGY = unique(SugarData_df$Strategy)
+NONGLUCOPHILY = unique(SugarData_df$NonGlucophilic)
+
+NonGluco_Strategy_df = data.frame(Strategy = character(), 
+                                  Glucophily = character(),
+                                  Count = numeric(), 
+                                  Proportion = numeric())
+k = 1
+for(i in 1:length(STRATEGY)){
+  TEMP = SugarData_df[which(SugarData_df$Strategy == STRATEGY[[i]]),]
+  for(j in 1:length(NONGLUCOPHILY)){
+    NONGLUCTEMP = length(which(TEMP$NonGlucophilic == NONGLUCOPHILY[[j]]))
+    NonGluco_Strategy_df[k, 1] = STRATEGY[[i]]
+    NonGluco_Strategy_df[k, 2] = NONGLUCOPHILY[[j]]
+    NonGluco_Strategy_df[k, 3] = NONGLUCTEMP
+    NonGluco_Strategy_df[k, 4] = NONGLUCTEMP/nrow(TEMP)
+    k = k+1
+    
+  }
+}
+
+
+a = ggplot(NonGluco_Strategy_df, aes(x = Strategy, y = Proportion, group = Glucophily, fill = factor(Glucophily)))
+a = a + geom_bar(stat = "identity", color = "black")
+a = a + scale_fill_manual(values = c("white", "gray40"), name = "Glucophily")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 9, color = "black", vjust = 0.2),
+              legend.title = element_text(face = "bold"), 
+              axis.title = element_text(face = "bold"), 
+              strip.background = element_rect(fill = "white"), 
+              strip.text = element_text(face = "bold", size = 10),
+              )
+a = a + xlab("Glucophily") + ylab("Proportion")
+ggsave("Non-glucophily_MetabolicStrategy.pdf")
+ggsave("Non-glucophily_MetabolicStrategy.png")
+
+
+
+BRNONGLUPRES = nrow(Generalist_df[which(Generalist_df$Strain %in% Nonglucophily$Strain),])
+BRGLUPRES = nrow(Generalist_df[-which(Generalist_df$Strain %in% Nonglucophily$Strain),])
+CLADENONGLUPRE =  nrow(Sugar_m[which(Sugar_m$PU %in% Nonglucophily$Strain),])-nrow(Generalist_df)
+CLADEGLUPRE = nrow(Sugar_m[-which(Sugar_m$PU %in% Nonglucophily$Strain),])- nrow(Generalist_df)
+
+TEMP_M = matrix(0, nrow = 2, ncol = 2)
+TEMP_M[1,1] = BRNONGLUPRES
+TEMP_M[1,2] = CLADENONGLUPRE
+TEMP_M[2,1] = BRGLUPRES
+TEMP_M[2,2] = CLADEGLUPRE
+TEMPTEST = fisher.test(TEMP_M, alternative = "great")  
+NonGlucophily_GenSpec_df = matrix(0, nrow = 2, ncol = 8)
+NonGlucophily_GenSpec_df = data.frame(NonGlucophily_GenSpec_df)
+colnames(NonGlucophily_GenSpec_df) = c("Type", "Classification", "Type_with", "Type_without", "Subphylum_with", "Subphylum_without", "Estimate", "pValue")
+
+NonGlucophily_GenSpec_df[1,1] = "Breadth"
+NonGlucophily_GenSpec_df[1,2] = "Generalist"
+NonGlucophily_GenSpec_df[1,3] = BRNONGLUPRES
+NonGlucophily_GenSpec_df[1,4] = BRGLUPRES
+NonGlucophily_GenSpec_df[1,5] = CLADENONGLUPRE
+NonGlucophily_GenSpec_df[1,6] = CLADEGLUPRE
+NonGlucophily_GenSpec_df[1,7] = TEMPTEST$estimate
+NonGlucophily_GenSpec_df[1,8] = TEMPTEST$p.value
+
+#Specialist Breadth
+BRNONGLUPRES = nrow(Specialist_df[which(Specialist_df$Strain %in% Nonglucophily$Strain),])
+BRGLUPRES = nrow(Specialist_df[-which(Specialist_df$Strain %in% Nonglucophily$Strain),])
+CLADENONGLUPRE =  nrow(Sugar_m[which(Sugar_m$PU %in% Nonglucophily$Strain),])-nrow(Specialist_df)
+CLADEGLUPRE = nrow(Sugar_m[-which(Sugar_m$PU %in% Nonglucophily$Strain),])-nrow(Specialist_df)
+
+TEMP_M = matrix(0, nrow = 2, ncol = 2)
+TEMP_M[1,1] = BRNONGLUPRES
+TEMP_M[1,2] = CLADENONGLUPRE
+TEMP_M[2,1] = BRGLUPRES
+TEMP_M[2,2] = CLADEGLUPRE
+TEMPTEST = fisher.test(TEMP_M, alternative = "great")  
+
+NonGlucophily_GenSpec_df[2,1] = "Breadth"
+NonGlucophily_GenSpec_df[2,2] = "Specialist"
+NonGlucophily_GenSpec_df[2,3] = BRNONGLUPRES
+NonGlucophily_GenSpec_df[2,4] = BRGLUPRES
+NonGlucophily_GenSpec_df[2,5] = CLADENONGLUPRE
+NonGlucophily_GenSpec_df[2,6] = CLADEGLUPRE
+NonGlucophily_GenSpec_df[2,7] = TEMPTEST$estimate
+NonGlucophily_GenSpec_df[2,8] = TEMPTEST$p.value
+
+NonGlucophily_GenSpec_df$P_adj = p.adjust(NonGlucophily_GenSpec_df$pValue, method = "BH")
+NonGlucophily_GenSpec_df$Sig = rep("Not Significant", nrow(NonGlucophily_GenSpec_df))
+NonGlucophily_GenSpec_df[which(NonGlucophily_GenSpec_df$P_adj <= 0.05),"Sig"] = "Significant"
+
+SigNonGlucophily_GenSpec_df = NonGlucophily_GenSpec_df[which(NonGlucophily_GenSpec_df$Sig == "Significant"),]
+NonGlucophily_GenSpec_df2 = SigNonGlucophily_GenSpec_df[,c(1:6)]
+NonGlucophily_GenSpec_df2 = melt(NonGlucophily_GenSpec_df2)
+NonGlucophily_GenSpec_df2$Proportion = rep(0, nrow(NonGlucophily_GenSpec_df2))
+
+CLASS = unique(NonGlucophily_GenSpec_df2$Classification)
+TYPE = unique(NonGlucophily_GenSpec_df2$Type)
+for(i in 1:length(CLASS)){
+  for(j in 1:length(TYPE)){
+    TEMP = NonGlucophily_GenSpec_df2[which(NonGlucophily_GenSpec_df2$Type == TYPE[[j]] & NonGlucophily_GenSpec_df2$Classification == CLASS[[i]]),]
+    VARIABLE = unique(TEMP$variable)
+    for(v in 1:length(VARIABLE)){
+      ROW = which(NonGlucophily_GenSpec_df2$variable == VARIABLE[[v]] & NonGlucophily_GenSpec_df2$Type == TYPE[[j]] & NonGlucophily_GenSpec_df2$Classification == CLASS[[i]])
+     
+       if(VARIABLE[[v]] == "Type_with"){
+        NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Type_with"), "value"]/sum(TEMP[which(TEMP$variable == "Type_with"), "value"], TEMP[which(TEMP$variable == "Type_without"), "value"])
+        
+      }else if(VARIABLE[[v]] == "Type_without"){
+                NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Type_without"), "value"]/sum(TEMP[which(TEMP$variable == "Type_with"), "value"], TEMP[which(TEMP$variable == "Type_without"), "value"])
+                
+      }else if(VARIABLE[[v]] == "Subphylum_with"){
+                NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Subphylum_with"), "value"]/sum(TEMP[which(TEMP$variable == "Subphylum_with"), "value"], TEMP[which(TEMP$variable == "Subphylum_without"), "value"])
+                
+      }else{
+         NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Subphylum_without"), "value"]/sum(TEMP[which(TEMP$variable == "Subphylum_with"), "value"], TEMP[which(TEMP$variable == "Subphylum_without"), "value"])
+
+      }
+    }
+  }
+}
+NonGlucophily_GenSpec_df2$Clade = rep("Subphylum", nrow(NonGlucophily_GenSpec_df2))
+NonGlucophily_GenSpec_df2[which(NonGlucophily_GenSpec_df2$variable %in% c("Type_with", "Type_without")), "Clade"] = "Generalist"
+
+NonGlucophily_GenSpec_df2[which(NonGlucophily_GenSpec_df2$variable %in% c("Type_with", "Subphylum_with")), "Variable"] = "With"
+NonGlucophily_GenSpec_df2[which(NonGlucophily_GenSpec_df2$variable %in% c("Type_without", "Subphylum_without")), "Variable"] = "Without"
+
+
+a = ggplot(NonGlucophily_GenSpec_df2, aes(x = Clade, y = Proprtion, fill = Variable, group = Classification))
+a = a + geom_bar(stat = "identity", position = "fill", colour = "black")
+a = a + facet_wrap(.~Type)
+a = a + scale_fill_manual(values = c("#19567C", "gray80"), name = "Class")
+a = a + scale_y_discrete(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 8, vjust = 0.2,color = "black"),
+              strip.background = element_rect(colour="white", fill= "white"), 
+              strip.text.x = element_text(face = "bold"), 
+              axis.title.y = element_blank(), 
+              axis.title.x = element_blank(), 
+              axis.ticks.x = element_blank(), 
+              legend.title = element_text(face = "bold"),
+              axis.text = element_blank(), 
+              axis.ticks = element_blank()
+              )
+a
+ggsave("Nonglucophily_mosaic_NotCorr.pdf")
+ggsave("Nonglucophily_mosaic_NotCorr.png")
+
+
+```
+
+
+Specialists were not associated with non-glucophily for breadth. To limit the number of tests we will be doing, we will only be looking at specific sugar nonglucophily associated with generalists and not specialists. 
+```{r Nonglucophily for specific sugars generalists and specialists}
+SUGARS = colnames(Nonglucophilic_all)[4:ncol(Nonglucophilic_all)]
+
+#### Breadth Generalists and Specialists with specific sugar non-glucophily
+#Generalist
+Gen_SugarNonGluco_Breadth_df = data.frame(Sugar = character(), 
+                                          Type_with = numeric(),
+                                          Type_without = numeric(),
+                                          Subphylum_with = numeric(),
+                                          Suphylum_without = numeric(),
+                                          Prop_Type_w = numeric(),
+                                          Prop_Type_wo = numeric(),
+                                          Prop_Sub_w = numeric(),
+                                          Prop_Sub_wo = numeric(),
+                                          Estimate = numeric(),
+                                          p_value = numeric())
+SUGARS = Sugar
+for(i in 1:length(SUGARS)){
+  SUGARCOL = which(colnames(Nonglucophilic_all) == SUGARS[[i]])
+  TEMPSUGAR = Nonglucophilic_all[which(Nonglucophilic_all[,SUGARCOL] == 1), "PU"]
+  BRNONGLUPRES = nrow(Generalist_df[which(Generalist_df$Strain %in% TEMPSUGAR),])
+  BRGLUPRES = nrow(Generalist_df[-which(Generalist_df$Strain %in% TEMPSUGAR),])
+  CLADENONGLUPRE =  nrow(Sugar_m[which(Sugar_m$PU %in% TEMPSUGAR),])
+  CLADEGLUPRE = nrow(Sugar_m[-which(Sugar_m$PU %in% TEMPSUGAR),])
+
+  TEMP_M = matrix(0, nrow = 2, ncol = 2)
+  TEMP_M[1,1] = BRNONGLUPRES
+  TEMP_M[1,2] = CLADENONGLUPRE
+  TEMP_M[2,1] = BRGLUPRES
+  TEMP_M[2,2] = CLADEGLUPRE
+  TEMPTEST = fisher.test(TEMP_M, alternative = "great") 
+  Gen_SugarNonGluco_Breadth_df[i,1] = SUGARS[[i]]
+  Gen_SugarNonGluco_Breadth_df[i,2] = BRNONGLUPRES
+  Gen_SugarNonGluco_Breadth_df[i,3] = BRGLUPRES
+  Gen_SugarNonGluco_Breadth_df[i,4] = CLADENONGLUPRE
+  Gen_SugarNonGluco_Breadth_df[i,5] = CLADEGLUPRE
+  Gen_SugarNonGluco_Breadth_df[i,6] = BRNONGLUPRES/(BRNONGLUPRES+BRGLUPRES)
+  Gen_SugarNonGluco_Breadth_df[i,7] = BRGLUPRES/(BRNONGLUPRES+BRGLUPRES)
+  Gen_SugarNonGluco_Breadth_df[i,8] = CLADENONGLUPRE/(CLADENONGLUPRE+CLADEGLUPRE)
+  Gen_SugarNonGluco_Breadth_df[i,9] = CLADEGLUPRE/(CLADENONGLUPRE+CLADEGLUPRE)
+  Gen_SugarNonGluco_Breadth_df[i,10] = TEMPTEST$estimate
+  Gen_SugarNonGluco_Breadth_df[i,11] = TEMPTEST$p.value
+}
+
+Gen_SugarNonGluco_Breadth_df$Classification = rep("Generalist", nrow(Gen_SugarNonGluco_Breadth_df))
+Gen_SugarNonGluco_Breadth_df$Padj = p.adjust(Gen_SugarNonGluco_Breadth_df$p_value, method = "BH")
+Gen_SugarNonGluco_Breadth_df$Sig_adj = rep("Not Significant", nrow(Gen_SugarNonGluco_Breadth_df))
+Gen_SugarNonGluco_Breadth_df[which(Gen_SugarNonGluco_Breadth_df$Padj <= 0.05), "Sig_adj"] = "Significant"
+SigGen_SugarNonGluco_Breadth_df = Gen_SugarNonGluco_Breadth_df[which(Gen_SugarNonGluco_Breadth_df$Sig_adj == "Significant"),]
+```
+
+
+Do we see an enrichment for non-glucophilic traits in nitrogen generalists or specialists
+```{r Nonglucophily analyses with generalists and specialists, message = FALSE, insert = FALSE, warning= FALSE}
+
+BRNONGLUPRES = nrow(Nitrogen_Generalist_df[which(Nitrogen_Generalist_df$Strain %in% Nonglucophily$Strain),])
+BRGLUPRES = nrow(Nitrogen_Generalist_df[-which(Nitrogen_Generalist_df$Strain %in% Nonglucophily$Strain),])
+CLADENONGLUPRE =  nrow(Nitrogen_m[which(Nitrogen_m$PU %in% Nonglucophily$Strain),])-nrow(Nitrogen_Generalist_df)
+CLADEGLUPRE = nrow(Nitrogen_m[-which(Nitrogen_m$PU %in% Nonglucophily$Strain),])- nrow(Nitrogen_Generalist_df)
+
+TEMP_M = matrix(0, nrow = 2, ncol = 2)
+TEMP_M[1,1] = BRNONGLUPRES
+TEMP_M[1,2] = CLADENONGLUPRE
+TEMP_M[2,1] = BRGLUPRES
+TEMP_M[2,2] = CLADEGLUPRE
+TEMPTEST = fisher.test(TEMP_M, alternative = "great")  
+Nitrogen_NonGlucophily_GenSpec_df = matrix(0, nrow = 2, ncol = 8)
+Nitrogen_NonGlucophily_GenSpec_df = data.frame(Nitrogen_NonGlucophily_GenSpec_df)
+colnames(Nitrogen_NonGlucophily_GenSpec_df) = c("Type", "Classification", "Type_with", "Type_without", "Subphylum_with", "Subphylum_without", "Estimate", "pValue")
+
+Nitrogen_NonGlucophily_GenSpec_df[1,1] = "Breadth"
+Nitrogen_NonGlucophily_GenSpec_df[1,2] = "Generalist"
+Nitrogen_NonGlucophily_GenSpec_df[1,3] = BRNONGLUPRES
+Nitrogen_NonGlucophily_GenSpec_df[1,4] = BRGLUPRES
+Nitrogen_NonGlucophily_GenSpec_df[1,5] = CLADENONGLUPRE
+Nitrogen_NonGlucophily_GenSpec_df[1,6] = CLADEGLUPRE
+Nitrogen_NonGlucophily_GenSpec_df[1,7] = TEMPTEST$estimate
+Nitrogen_NonGlucophily_GenSpec_df[1,8] = TEMPTEST$p.value
+
+#Specialist Breadth
+BRNONGLUPRES = nrow(Nitrogen_Specialist_df[which(Nitrogen_Specialist_df$Strain %in% Nonglucophily$Strain),])
+BRGLUPRES = nrow(Nitrogen_Specialist_df[-which(Nitrogen_Specialist_df$Strain %in% Nonglucophily$Strain),])
+CLADENONGLUPRE =  nrow(Nitrogen_m[which(Nitrogen_m$PU %in% Nonglucophily$Strain),])-nrow(Nitrogen_Specialist_df)
+CLADEGLUPRE = nrow(Nitrogen_m[-which(Nitrogen_m$PU %in% Nonglucophily$Strain),])-nrow(Nitrogen_Specialist_df)
+
+TEMP_M = matrix(0, nrow = 2, ncol = 2)
+TEMP_M[1,1] = BRNONGLUPRES
+TEMP_M[1,2] = CLADENONGLUPRE
+TEMP_M[2,1] = BRGLUPRES
+TEMP_M[2,2] = CLADEGLUPRE
+TEMPTEST = fisher.test(TEMP_M, alternative = "great")  
+
+Nitrogen_NonGlucophily_GenSpec_df[2,1] = "Breadth"
+Nitrogen_NonGlucophily_GenSpec_df[2,2] = "Specialist"
+Nitrogen_NonGlucophily_GenSpec_df[2,3] = BRNONGLUPRES
+Nitrogen_NonGlucophily_GenSpec_df[2,4] = BRGLUPRES
+Nitrogen_NonGlucophily_GenSpec_df[2,5] = CLADENONGLUPRE
+Nitrogen_NonGlucophily_GenSpec_df[2,6] = CLADEGLUPRE
+Nitrogen_NonGlucophily_GenSpec_df[2,7] = TEMPTEST$estimate
+Nitrogen_NonGlucophily_GenSpec_df[2,8] = TEMPTEST$p.value
+
+Nitrogen_NonGlucophily_GenSpec_df$P_adj = p.adjust(Nitrogen_NonGlucophily_GenSpec_df$pValue, method = "BH")
+Nitrogen_NonGlucophily_GenSpec_df$Sig = rep("Not Significant", nrow(Nitrogen_NonGlucophily_GenSpec_df))
+Nitrogen_NonGlucophily_GenSpec_df[which(Nitrogen_NonGlucophily_GenSpec_df$P_adj <= 0.05),"Sig"] = "Significant"
+
+Sig_NitogenNonGlucophily_GenSpec_df = Nitrogen_NonGlucophily_GenSpec_df[which(Nitrogen_NonGlucophily_GenSpec_df$Sig == "Significant"),]
+Nitrogen_NonGlucophily_GenSpec_df2 = Sig_NitogenNonGlucophily_GenSpec_df[,c(1:6)]
+Nitrogen_NonGlucophily_GenSpec_df2 = melt(Nitrogen_NonGlucophily_GenSpec_df2)
+Nitrogen_NonGlucophily_GenSpec_df2$Proportion = rep(0, nrow(Nitrogen_NonGlucophily_GenSpec_df2))
+
+CLASS = unique(Nitrogen_NonGlucophily_GenSpec_df2$Classification)
+TYPE = unique(Nitrogen_NonGlucophily_GenSpec_df2$Type)
+for(i in 1:length(CLASS)){
+  for(j in 1:length(TYPE)){
+    TEMP = Nitrogen_NonGlucophily_GenSpec_df2[which(Nitrogen_NonGlucophily_GenSpec_df2$Type == TYPE[[j]] & Nitrogen_NonGlucophily_GenSpec_df2$Classification == CLASS[[i]]),]
+    VARIABLE = unique(TEMP$variable)
+    for(v in 1:length(VARIABLE)){
+      ROW = which(Nitrogen_NonGlucophily_GenSpec_df2$variable == VARIABLE[[v]] & Nitrogen_NonGlucophily_GenSpec_df2$Type == TYPE[[j]] & Nitrogen_NonGlucophily_GenSpec_df2$Classification == CLASS[[i]])
+     
+       if(VARIABLE[[v]] == "Type_with"){
+        Nitrogen_NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Type_with"), "value"]/sum(TEMP[which(TEMP$variable == "Type_with"), "value"], TEMP[which(TEMP$variable == "Type_without"), "value"])
+        
+      }else if(VARIABLE[[v]] == "Type_without"){
+                Nitrogen_NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Type_without"), "value"]/sum(TEMP[which(TEMP$variable == "Type_with"), "value"], TEMP[which(TEMP$variable == "Type_without"), "value"])
+                
+      }else if(VARIABLE[[v]] == "Subphylum_with"){
+                Nitrogen_NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Subphylum_with"), "value"]/sum(TEMP[which(TEMP$variable == "Subphylum_with"), "value"], TEMP[which(TEMP$variable == "Subphylum_without"), "value"])
+                
+      }else{
+         Nitrogen_NonGlucophily_GenSpec_df2[ROW,"Proprtion"] = TEMP[which(TEMP$variable == "Subphylum_without"), "value"]/sum(TEMP[which(TEMP$variable == "Subphylum_with"), "value"], TEMP[which(TEMP$variable == "Subphylum_without"), "value"])
+
+      }
+    }
+  }
+}
+Nitrogen_NonGlucophily_GenSpec_df2$Clade = rep("Subphylum", nrow(Nitrogen_NonGlucophily_GenSpec_df2))
+Nitrogen_NonGlucophily_GenSpec_df2[which(Nitrogen_NonGlucophily_GenSpec_df2$variable %in% c("Type_with", "Type_without")), "Clade"] = "Generalist"
+
+Nitrogen_NonGlucophily_GenSpec_df2[which(Nitrogen_NonGlucophily_GenSpec_df2$variable %in% c("Type_with", "Subphylum_with")), "Variable"] = "With"
+Nitrogen_NonGlucophily_GenSpec_df2[which(Nitrogen_NonGlucophily_GenSpec_df2$variable %in% c("Type_without", "Subphylum_without")), "Variable"] = "Without"
+
+
+a = ggplot(Nitrogen_NonGlucophily_GenSpec_df2, aes(x = Clade, y = Proprtion, fill = Variable))
+a = a + geom_bar(stat = "identity", position = "fill", colour = "black")
+a = a + facet_wrap(.~Type)
+a = a + scale_fill_manual(values = c("#19567C", "gray80"), name = "Class")
+a = a + scale_y_discrete(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 8, vjust = 0.2,color = "black"),
+              strip.background = element_rect(colour="white", fill= "white"), 
+              strip.text.x = element_text(face = "bold"), 
+              axis.title.y = element_blank(), 
+              axis.title.x = element_blank(), 
+              axis.ticks.x = element_blank(), 
+              legend.title = element_text(face = "bold"),
+              axis.text = element_blank(), 
+              axis.ticks = element_blank()
+              )
+a
+ggsave("Nitrogen_Nonglucophily_mosaic_NotCorr.pdf")
+ggsave("Nitrogen_Nonglucophily_mosaic_NotCorr.png")
+
+
+```
+
+Specialists were not associated with non-glucophily for breadth. To limit the number of tests we will be doing, we will only be looking at specific sugar nonglucophily associated with generalists and not specialists. 
+```{r Nonglucophily for specific sugars generalists and specialists}
+
+#### Breadth Generalists and Specialists with specific sugar non-glucophily
+#Generalist
+Gen_NitrogenNonGluco_Breadth_df = data.frame(Nitrogen = character(), 
+                                          Type_with = numeric(),
+                                          Type_without = numeric(),
+                                          Subphylum_with = numeric(),
+                                          Suphylum_without = numeric(),
+                                          Prop_Type_w = numeric(),
+                                          Prop_Type_wo = numeric(),
+                                          Prop_Sub_w = numeric(),
+                                          Prop_Sub_wo = numeric(),
+                                          Estimate = numeric(),
+                                          p_value = numeric())
+NITROGENS = Nitrogen
+for(i in 1:length(SUGARS)){
+  SUGARCOL = which(colnames(Nonglucophilic_all) == SUGARS[[i]])
+  TEMPSUGAR = Nonglucophilic_all[which(Nonglucophilic_all[,SUGARCOL] == 1), "PU"]
+  BRNONGLUPRES = nrow(Nitrogen_Generalist_df[which(Nitrogen_Generalist_df$Strain %in% TEMPSUGAR),])
+  BRGLUPRES = nrow(Nitrogen_Generalist_df[-which(Nitrogen_Generalist_df$Strain %in% TEMPSUGAR),])
+  CLADENONGLUPRE =  nrow(Nitrogen_m[which(Nitrogen_m$PU %in% TEMPSUGAR),])
+  CLADEGLUPRE = nrow(Nitrogen_m[-which(Nitrogen_m$PU %in% TEMPSUGAR),])
+
+  TEMP_M = matrix(0, nrow = 2, ncol = 2)
+  TEMP_M[1,1] = BRNONGLUPRES
+  TEMP_M[1,2] = CLADENONGLUPRE
+  TEMP_M[2,1] = BRGLUPRES
+  TEMP_M[2,2] = CLADEGLUPRE
+  TEMPTEST = fisher.test(TEMP_M, alternative = "great") 
+  Gen_NitrogenNonGluco_Breadth_df[i,1] = SUGARS[[i]]
+  Gen_NitrogenNonGluco_Breadth_df[i,2] = BRNONGLUPRES
+  Gen_NitrogenNonGluco_Breadth_df[i,3] = BRGLUPRES
+  Gen_NitrogenNonGluco_Breadth_df[i,4] = CLADENONGLUPRE
+  Gen_NitrogenNonGluco_Breadth_df[i,5] = CLADEGLUPRE
+  Gen_NitrogenNonGluco_Breadth_df[i,6] = BRNONGLUPRES/(BRNONGLUPRES+BRGLUPRES)
+  Gen_NitrogenNonGluco_Breadth_df[i,7] = BRGLUPRES/(BRNONGLUPRES+BRGLUPRES)
+  Gen_NitrogenNonGluco_Breadth_df[i,8] = CLADENONGLUPRE/(CLADENONGLUPRE+CLADEGLUPRE)
+  Gen_NitrogenNonGluco_Breadth_df[i,9] = CLADEGLUPRE/(CLADENONGLUPRE+CLADEGLUPRE)
+  Gen_NitrogenNonGluco_Breadth_df[i,10] = TEMPTEST$estimate
+  Gen_NitrogenNonGluco_Breadth_df[i,11] = TEMPTEST$p.value
+}
+
+Gen_NitrogenNonGluco_Breadth_df$Classification = rep("Generalist", nrow(Gen_NitrogenNonGluco_Breadth_df))
+Gen_NitrogenNonGluco_Breadth_df$Padj = p.adjust(Gen_NitrogenNonGluco_Breadth_df$p_value, method = "BH")
+Gen_NitrogenNonGluco_Breadth_df$Sig_adj = rep("Not Significant", nrow(Gen_NitrogenNonGluco_Breadth_df))
+Gen_NitrogenNonGluco_Breadth_df[which(Gen_NitrogenNonGluco_Breadth_df$Padj <= 0.05), "Sig_adj"] = "Significant"
+SigGen_NitrogenNonGluco_Breadth_df = Gen_NitrogenNonGluco_Breadth_df[which(Gen_NitrogenNonGluco_Breadth_df$Sig_adj == "Significant"),]
+```
