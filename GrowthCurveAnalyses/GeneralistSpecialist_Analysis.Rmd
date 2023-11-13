@@ -1,0 +1,903 @@
+---
+title: "Generalist Specialist Analysis"
+author: "Dana Opulente"
+date: '2022-02-19'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r run packages, message= FALSE, warning= FALSE, insert = FALSE}
+
+options(stringsAsFactors = FALSE)
+
+library(AER)
+library(chisq.posthoc.test)
+library(corrplot)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(ggVennDiagram)
+library(Hmisc)
+library(MetBrewer)
+library(multcomp)
+library(picante)
+library(pheatmap)
+library(pvclust)
+library(reshape)
+library(RColorBrewer)
+library(rcompanion)
+library(stargazer)
+library(tidystats)
+library(tidyverse)
+library(tinytex)
+library(vegan)
+library(tidyquant)
+library(ggdist)
+
+```
+
+```{r Read in and manipulate data, message= FALSE, warning= FALSE, insert = FALSE}
+Sugar = c("Cellobiose", "Citrate", "D-Glucosamine", "Fructose", "Galactose", "Glucose", "Glycerol", "L-Arabinose", "L-Sorbose", "Lactose", "Maltose", "Mannose", "myo-Inositol", "Rhamnose", "Xylose", "Raffinose", "Sucrose", "DL-Lactate")
+
+Nitrogen = c("Allantoin", "Creatinine", "L-Lysine", "Nitrate", "Nitrite", "Urea")
+
+GrowthRate_df = read.csv("Finalized_GrowthRates_df.csv", header = TRUE, check.names = FALSE)
+GrowthRate_df = GrowthRate_df[which(GrowthRate_df$Status == "Keep"), ]
+MajorClades = read.csv("MajorClades_allStrains.csv", header = TRUE)
+
+```
+
+__Metabolic Analysis__
+
+__Sugar___ 
+We are first going to focus on sugar metabolism. So we need to subset the growth rate data to only sugar metabolism data.
+```{r Limit the growth data to only sugar metabolism traits, message= FALSE, warning= FALSE, insert = FALSE}
+
+Sugar_m = GrowthRate_df[, c(1, 5, 6, 16, which(colnames(GrowthRate_df) %in% Sugar))]
+
+#Remove the yeasts that we dropped because we could not get good growth data for them.
+RemoveDropYeasts = data.frame(PU = character(),
+                              NACount = numeric())
+for(i in 1:nrow(Sugar_m)){
+  RemoveDropYeasts[i,1] = Sugar_m[i,1]
+  RemoveDropYeasts[i,2] = length(which(is.na(Sugar_m[i,c(5:ncol(Sugar_m))]) == TRUE))
+}
+
+DROPROWS = RemoveDropYeasts[which(RemoveDropYeasts$NACount >=14), "PU"]
+
+
+Sugar_m = Sugar_m[-which(Sugar_m$PU %in% DROPROWS),]
+
+Sugar_m = Sugar_m[-which(Sugar_m$PU %in% MajorClades[which(MajorClades$Clade == "Drop"), "Strain"]), ]
+
+Sugar_m = Sugar_m[,-4]
+
+Sugar_df = melt(Sugar_m, id.vars = c("PU", "Species", "Genus"))
+colnames(Sugar_df)[4:5] = c("Sugar", "GrowthRate")
+```
+
+__Nitrogen___ 
+We are first going to focus on nitrogen metabolism. So we need to subset the growth rate data to only nitrogen metabolism data.
+```{r Limit the growth data to only sugar metabolism traits, message= FALSE, warning= FALSE, insert = FALSE}
+
+Nitrogen_m = GrowthRate_df[, c(1, 5, 6, 16, which(colnames(GrowthRate_df) %in% Nitrogen))]
+
+#Remove the yeasts that we dropped because we could not get good growth data for them.
+RemoveDropYeasts = data.frame(PU = character(),
+                              NACount = numeric())
+for(i in 1:nrow(Nitrogen_m)){
+  RemoveDropYeasts[i,1] = Nitrogen_m[i,1]
+  RemoveDropYeasts[i,2] = length(which(is.na(Nitrogen_m[i,c(5:ncol(Nitrogen_m))]) == TRUE))
+}
+
+DROPROWS = RemoveDropYeasts[which(RemoveDropYeasts$NACount >=5), "PU"]
+
+
+Nitrogen_m = Nitrogen_m[-which(Nitrogen_m$PU %in% DROPROWS),]
+Nitrogen_m = Nitrogen_m[-which(Nitrogen_m$PU %in% MajorClades[which(MajorClades$Clade == "Drop"), "Strain"]), ]
+Nitrogen_m = Nitrogen_m[,-4]
+Nitrogen_df = melt(Nitrogen_m, id.vars = c("PU", "Species", "Genus"))
+colnames(Nitrogen_df)[4:5] = c("Nitrogen", "GrowthRate")
+
+#DUPLICATES = c("Lachancea fantastica")
+#Nitrogen_df = Nitrogen_df[-which(Nitrogen_df$Species %in% DUPLICATES),]
+```
+
+__Variation in Carbon Breadth__
+We want to quantify how much variation there is in carbon breadth among yeasts
+```{r Quantifycarbon breathe across species Saccharomycotina yeasts, message= FALSE, warning= FALSE, insert = FALSE}
+
+#Create a data frame that calculates sugar breadth for each species
+SpeciesBreadth = data.frame(Strain = character(),
+                            Species = character(),
+                            Genus = character(),
+                            Breadth = numeric())
+
+STRAIN = unique(Sugar_df$PU)
+
+for(i in 1:length(STRAIN)){
+  SpeciesBreadth[i,1] = STRAIN[[i]]
+  TEMP = Sugar_df[which(Sugar_df$PU == STRAIN[[i]]),]
+  SpeciesBreadth[i,2] = unique(TEMP$Species)
+  SpeciesBreadth[i,3] = unique(TEMP$Genus)
+  SpeciesBreadth[i,4] = length(which(TEMP$GrowthRate > 0))
+}
+
+```
+
+
+Carbon breadth variation
+```{r Quantify how much variation there is in carbon breathe across Saccharomycotina yeasts, message= FALSE, warning= FALSE}
+
+#Histogram of Sugar breadth across species
+a = ggplot(SpeciesBreadth, aes(x = Breadth))
+a = a +geom_histogram(binwidth = 1, color = "black", fill = "gray90")
+a = a + xlab("Sugar Breadth") + ylab("Count")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 10, vjust = 0.2,color = "black"),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold")
+              )
+a
+ggsave("Sugar_histogram.pdf", height = 10, width = 10)
+ggsave("Sugar_histogram.png", height = 10, width = 10)
+```
+
+Across clades there is variation in sugar breadth. For the purposes of the major Y1000+ paper we are going to focus on the entire subphylum and not in specific differences within clades. However, I am going to start calculate within clade generalist and specialists for other manuscripts.
+```{r Variation in sugar breadth across clades, message= FALSE, warning= FALSE}
+#Variation in breadthwithin Major Clades
+
+SpeciesBreadth2 = SpeciesBreadth
+SpeciesBreadth2 = merge(SpeciesBreadth2, MajorClades, by = "Strain")
+
+a = ggplot(SpeciesBreadth2, aes(x = Breadth))
+a = a +geom_histogram(binwidth = 1, color = "black", fill = "gray90")
+a = a + facet_wrap(.~Clade, scales = "free")
+a = a + xlab("Sugar Breadth") + ylab("Count")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 10, vjust = 0.2,color = "black"),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold")
+              )
+a
+ggsave("Clade_Sugar_histogram.pdf", height = 10, width = 10)
+ggsave("Clade_Sugar_histogram.png", height = 10, width = 10)
+
+
+CladeStats_df = data.frame(Clade = character(),
+                                   SpeciesCount = numeric(),
+                                   MinBreadth = numeric(),
+                                   MaxBreadth = numeric(),
+                                   MeanBreadth = numeric(),
+                                   MedianBreadth = numeric(),
+                                   Quart_1st = numeric(),
+                                   Quart_3rd = numeric())
+
+CLADE = unique(SpeciesBreadth2$Clade)
+
+for(i in 1:length(CLADE)){
+  TEMP = SpeciesBreadth2[which(SpeciesBreadth2$Clade == CLADE[[i]]),]
+  CladeStats_df[i,1] = CLADE[[i]]
+  CladeStats_df[i,2] = nrow(TEMP)
+  CladeStats_df[i,3] = min(TEMP$Breadth, na.rm = TRUE)
+  CladeStats_df[i,4] = max(TEMP$Breadth, na.rm = TRUE)
+  CladeStats_df[i,5] = mean(TEMP$Breadth, na.rm = TRUE)
+  CladeStats_df[i,6] = median(TEMP$Breadth, na.rm = TRUE)
+  CladeStats_df[i,7] = quantile(TEMP$Breadth)[2]
+  CladeStats_df[i,8] = quantile(TEMP$Breadth)[4]
+}
+
+```
+
+__Variation in Nitrogen Breadth__
+We want to quantify how much variation there is in nitrogen breadth among yeasts
+```{r Quantifynitrogen breathe across species Saccharomycotina yeasts, message= FALSE, warning= FALSE, insert = FALSE}
+
+#Create a data frame that calculates sugar breadth for each species
+SpeciesNitrogenBreadth = data.frame(Strain = character(),
+                            Species = character(),
+                            Genus = character(),
+                            Breadth = numeric())
+
+STRAIN = unique(Nitrogen_df$PU)
+
+for(i in 1:length(STRAIN)){
+  SpeciesNitrogenBreadth[i,1] = STRAIN[[i]]
+  TEMP = Nitrogen_df[which(Nitrogen_df$PU == STRAIN[[i]]),]
+  SpeciesNitrogenBreadth[i,2] = unique(TEMP$Species)
+  SpeciesNitrogenBreadth[i,3] = unique(TEMP$Genus)
+  SpeciesNitrogenBreadth[i,4] = length(which(TEMP$GrowthRate > 0))
+}
+
+```
+
+
+```{r Quantify how much variation there is in nitrogen breathe across Saccharomycotina yeasts, message= FALSE, warning= FALSE}
+
+#Histogram of Nitrogen breadth across species
+a = ggplot(SpeciesNitrogenBreadth, aes(x = Breadth))
+a = a +geom_histogram(binwidth = 1, color = "black", fill = "gray90")
+a = a + xlab("Nitrogen Breadth") + ylab("Count")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 10, vjust = 0.2,color = "black"),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold")
+              )
+a
+ggsave("Nitrogen_histogram.pdf", height = 10, width = 10)
+ggsave("Nitrogen_histogram.png", height = 10, width = 10)
+```
+
+Across clades there is variation in Nitrogen breadth. For the purposes of the major Y1000+ paper we are going to focus on the entire subphylum and not in specific differences within clades. However, I am going to start calculate within clade generalist and specialists for other manuscripts.
+```{r Variation in sugar breadth across clades, message= FALSE, warning= FALSE}
+#Variation in breadthwithin Major Clades
+
+SpeciesNitrogenBreadth2 = SpeciesNitrogenBreadth
+SpeciesNitrogenBreadth2 = merge(SpeciesNitrogenBreadth2, MajorClades, by = "Strain")
+
+a = ggplot(SpeciesNitrogenBreadth2, aes(x = Breadth))
+a = a +geom_histogram(binwidth = 1, color = "black", fill = "gray90")
+a = a + facet_wrap(.~Clade, scales = "free")
+a = a + xlab("Nitrogen Breadth") + ylab("Count")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 10, vjust = 0.2,color = "black"),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold")
+              )
+a
+ggsave("Clade_Nitrogen_histogram.pdf", height = 10, width = 10)
+ggsave("Clade_Nitrogen_histogram.png", height = 10, width = 10)
+
+
+Nitrogen_CladeStats_df = data.frame(Clade = character(),
+                                   SpeciesCount = numeric(),
+                                   MinBreadth = numeric(),
+                                   MaxBreadth = numeric(),
+                                   MeanBreadth = numeric(),
+                                   MedianBreadth = numeric(),
+                                   Quart_1st = numeric(),
+                                   Quart_3rd = numeric())
+
+CLADE = unique(SpeciesNitrogenBreadth2$Clade)
+
+for(i in 1:length(CLADE)){
+  TEMP = SpeciesBreadth2[which(SpeciesNitrogenBreadth2$Clade == CLADE[[i]]),]
+  Nitrogen_CladeStats_df[i,1] = CLADE[[i]]
+  Nitrogen_CladeStats_df[i,2] = nrow(TEMP)
+  Nitrogen_CladeStats_df[i,3] = min(TEMP$Breadth, na.rm = TRUE)
+  Nitrogen_CladeStats_df[i,4] = max(TEMP$Breadth, na.rm = TRUE)
+  Nitrogen_CladeStats_df[i,5] = mean(TEMP$Breadth, na.rm = TRUE)
+  Nitrogen_CladeStats_df[i,6] = median(TEMP$Breadth, na.rm = TRUE)
+  Nitrogen_CladeStats_df[i,7] = quantile(TEMP$Breadth)[2]
+  Nitrogen_CladeStats_df[i,8] = quantile(TEMP$Breadth)[4]
+}
+
+```
+
+
+__Classifying Generalists and Specialists based on Carbon and Nitrogen Breadth__
+Classifying generalists and specialists based on sugar breadth, how many sugars a species grows on.
+```{r Randomization to determine generalists and specialists, message= FALSE, warning= FALSE, insert = FALSE}
+
+Sugar_DataMatrix = Sugar_m[,c(4:ncol(Sugar_m))]
+Sugar_DataMatrix$PU = Sugar_m$PU
+Sugar_DataMatrix = unique(Sugar_DataMatrix)
+
+rownames(Sugar_DataMatrix) = Sugar_DataMatrix$PU
+
+Sugar_DataMatrix = Sugar_DataMatrix[,-which(colnames(Sugar_DataMatrix) == "PU")]
+Sugar_DataMatrix = data.frame(Sugar_DataMatrix)
+Sugar_DataMatrix = as.matrix(Sugar_DataMatrix)
+Sugar_DataMatrix[which(is.na(Sugar_DataMatrix) == TRUE)] = 0
+Sugar_DataMatrix2 = apply(Sugar_DataMatrix, 2, as.numeric)
+rownames(Sugar_DataMatrix2) = rownames(Sugar_DataMatrix)
+colnames(Sugar_DataMatrix2) = colnames(Sugar_DataMatrix)
+Sugar_DataMatrix2[which(is.na(Sugar_DataMatrix2) == TRUE)] = 0
+
+# Permutes the 
+PermutedData= list()
+for(iter in 1:1000){
+  PermutedData[[iter]] = list()
+  tempMatrix <- randomizeMatrix(Sugar_DataMatrix2, null.model = "frequency")
+  colnames(tempMatrix) = colnames(Sugar_DataMatrix2)
+  rownames(tempMatrix) = rownames(Sugar_DataMatrix2)
+  tempMatrix = as.matrix(tempMatrix, check.names = F)
+  PermutedData[[iter]]$Permutation <- iter
+  PermutedData[[iter]]$CompiledData <- tempMatrix
+}
+ 
+STRAIN = unique(SpeciesBreadth$Strain)
+
+FindGeneralist_df = data.frame(Strain = character(),
+                               Species = character(),
+                               Clade = character(),
+                               Observed = numeric(),
+                               Expected = numeric(),
+                               Percent = numeric(),
+                               Count = numeric(),
+                               Pvalue = numeric())
+k = 1
+for(i in 1:length(STRAIN)){
+  TEMPDATA = SpeciesBreadth[which(SpeciesBreadth$Strain == STRAIN[[i]]),]
+  tempObs = unique(TEMPDATA$Breadth)
+
+  tempListBreadth = list()
+  for(perm in 1:1000){
+    tempListBreadth[[perm]] = list()
+    tempDF1 = PermutedData[[perm]]$CompiledData
+    TEMPPERMUTED = tempDF1[which(rownames(tempDF1) == STRAIN[[i]]),]
+    tempListBreadth[[perm]] = length(which(TEMPPERMUTED > 0))
+  }
+  
+  tempPerm = unlist(tempListBreadth)
+  N = sum(tempPerm >= tempObs)
+  p = zapsmall(binconf(N, length(tempPerm), method = "exact"))
+  
+  FindGeneralist_df[k, 1] = STRAIN[[i]]
+  FindGeneralist_df[k, 2] = unique(TEMPDATA$Species)
+  if(length(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"]) > 0){
+    FindGeneralist_df[k, 3] = unique(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"])  
+  }else{
+    FindGeneralist_df[k, 3] = "Not Recorded"
+  }
+  
+  FindGeneralist_df[k, 4] = tempObs
+  FindGeneralist_df[k, 5] = mean(tempPerm, na.rm = T)
+  FindGeneralist_df[k, 6] = ecdf(tempPerm)(tempObs)
+  FindGeneralist_df[k, 7] = N
+  FindGeneralist_df[k, 8] = p[1]
+  k = k + 1
+}
+
+
+FindGeneralist_df$Sig = rep("Not Signficant", nrow(FindGeneralist_df))
+FindGeneralist_df[which(FindGeneralist_df$Pvalue <= 0.05), "Sig"] = "Significant"
+FindGeneralist_df$Correction = p.adjust(FindGeneralist_df$Pvalue, method = "BH")
+FindGeneralist_df$Sig_adj = rep("Not Signficant", nrow(FindGeneralist_df))
+FindGeneralist_df[which(FindGeneralist_df$Correction <= 0.05), "Sig_adj"] = "Significant"
+
+write.csv(FindGeneralist_df, "AllData_Generalists_10-14-2022.csv")
+
+# Limited to significance after multiple tests correction
+
+Generalist_df = FindGeneralist_df[which(FindGeneralist_df$Sig == "Significant"),]
+Generalist_df$Classification = rep("Generalist", nrow(Generalist_df))
+####################
+FindSpecialist_df = data.frame(Strain = character(),
+                               Species = character(),
+                               Clade = character(),
+                               Observed = numeric(),
+                               Expected = numeric(),
+                               Percent = numeric(),
+                               Count = numeric(),
+                               Pvalue = numeric())
+k = 1
+for(i in 1:length(STRAIN)){
+  TEMPDATA = SpeciesBreadth[which(SpeciesBreadth$Strain == STRAIN[[i]]),]
+  tempObs = unique(TEMPDATA$Breadth)
+
+  tempListBreadth = list()
+  for(perm in 1:1000){
+    tempListBreadth[[perm]] = list()
+    tempDF1 = PermutedData[[perm]]$CompiledData
+    TEMPPERMUTED = tempDF1[which(rownames(tempDF1) == STRAIN[[i]]),]
+    tempListBreadth[[perm]] = length(which(TEMPPERMUTED > 0))
+  }
+  
+  tempPerm = unlist(tempListBreadth)
+  N = sum(tempPerm <= tempObs)
+  p = zapsmall(binconf(N, length(tempPerm), method = "exact"))
+  
+  FindSpecialist_df[k, 1] = STRAIN[[i]]
+  FindSpecialist_df[k, 2] = unique(TEMPDATA$Species)
+  if(length(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"]) > 0){
+    FindSpecialist_df[k, 3] = unique(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"])  
+  }else{
+    FindSpecialist_df[k, 3] = "Not Recorded"
+  }
+  
+  FindSpecialist_df[k, 4] = tempObs
+  FindSpecialist_df[k, 5] = mean(tempPerm, na.rm = T)
+  FindSpecialist_df[k, 6] = ecdf(tempPerm)(tempObs)
+  FindSpecialist_df[k, 7] = N
+  FindSpecialist_df[k, 8] = p[1]
+  k = k + 1
+}
+
+
+FindSpecialist_df$Sig = rep("Not Signficant", nrow(FindSpecialist_df))
+FindSpecialist_df[which(FindSpecialist_df$Pvalue <= 0.05), "Sig"] = "Significant"
+FindSpecialist_df$Correction = p.adjust(FindSpecialist_df$Pvalue, method = "BH")
+FindSpecialist_df$Sig_adj = rep("Not Signficant", nrow(FindSpecialist_df))
+FindSpecialist_df[which(FindSpecialist_df$Correction <= 0.05), "Sig_adj"] = "Significant"
+
+write.csv(FindSpecialist_df, "AllData_Specialists.csv")
+
+# Limited to significance after multiple tests correction
+
+Specialist_df = FindSpecialist_df[which(FindSpecialist_df$Sig == "Significant"),]
+Specialist_df$Classification = rep("Specialist", nrow(Specialist_df))
+
+
+#Creates one table of generalists and specialists after multiple tests corrections
+Classification_df = rbind(Generalist_df, Specialist_df)
+Classification_df = unique(Classification_df)
+write.csv(Classification_df, paste("Classification_df_", Sys.Date(), ".csv", sep = ""))
+
+GENSPECSPECIES = unique(Classification_df$Strain)
+
+OLDGENERALISTS = read.csv("GeneralistPU.csv", header = TRUE)
+GENERALIST = OLDGENERALISTS[,2]
+OLDSPECIALIST = read.csv("SpecialistPU.csv", header = TRUE)
+SPECIALIST = OLDSPECIALIST[,2]
+
+
+GENERALISTCHECK = Classification_df[which(Classification_df$Strain %in% GENERALIST), ]
+write.csv(GENERALISTCHECK, file = "OLDGENERALIST_CLASS.csv")
+GENERALISTCHECK2 = Classification_df[-which(Classification_df$Strain %in% GENERALIST), ]
+write.csv(GENERALISTCHECK2, file = "OLDGENERALISTMISSING_CLASS.csv")
+
+SPECIALISTCHECK = Classification_df[which(Classification_df$Strain %in% SPECIALIST), ]
+write.csv(SPECIALISTCHECK, file = "OLDSPECIALIST_CLASS.csv")
+SPECIALISTCHECK2 = Classification_df[-which(Classification_df$Strain %in% SPECIALIST), ]
+write.csv(SPECIALISTCHECK2, file = "OLDSPECIALISTMISSING_CLASS.csv")
+
+
+
+```
+
+Classifying generalists and specialists based on nitrogen breadth, how many nitrogen a species grows on.
+```{r Randomization to determine generalists and specialists, message= FALSE, warning= FALSE, insert = FALSE}
+
+Nitrogen_DataMatrix = Nitrogen_m[,c(4:ncol(Nitrogen_m))]
+Nitrogen_DataMatrix$PU = Nitrogen_m$PU
+Nitrogen_DataMatrix = unique(Nitrogen_DataMatrix)
+
+rownames(Nitrogen_DataMatrix) = Nitrogen_DataMatrix$PU
+
+Nitrogen_DataMatrix = Nitrogen_DataMatrix[,-which(colnames(Nitrogen_DataMatrix) == "PU")]
+Nitrogen_DataMatrix = data.frame(Nitrogen_DataMatrix)
+Nitrogen_DataMatrix = as.matrix(Nitrogen_DataMatrix)
+Nitrogen_DataMatrix[which(is.na(Nitrogen_DataMatrix) == TRUE)] = 0
+Nitrogen_DataMatrix2 = apply(Nitrogen_DataMatrix, 2, as.numeric)
+rownames(Nitrogen_DataMatrix2) = rownames(Nitrogen_DataMatrix)
+colnames(Nitrogen_DataMatrix2) = colnames(Nitrogen_DataMatrix)
+Nitrogen_DataMatrix2[which(is.na(Nitrogen_DataMatrix2) == TRUE)] = 0
+
+# Permutes the 
+Nitrogen_PermutedData= list()
+for(iter in 1:1000){
+  Nitrogen_PermutedData[[iter]] = list()
+  tempMatrix <- randomizeMatrix(Nitrogen_DataMatrix2, null.model = "frequency")
+  colnames(tempMatrix) = colnames(Nitrogen_DataMatrix2)
+  rownames(tempMatrix) = rownames(Nitrogen_DataMatrix2)
+  tempMatrix = as.matrix(tempMatrix, check.names = F)
+  Nitrogen_PermutedData[[iter]]$Permutation <- iter
+  Nitrogen_PermutedData[[iter]]$CompiledData <- tempMatrix
+}
+ 
+STRAIN = unique(SpeciesNitrogenBreadth$Strain)
+
+Nitrogen_FindGeneralist_df = data.frame(Strain = character(),
+                               Species = character(),
+                               Clade = character(),
+                               Observed = numeric(),
+                               Expected = numeric(),
+                               Percent = numeric(),
+                               Count = numeric(),
+                               Pvalue = numeric())
+k = 1
+for(i in 1:length(STRAIN)){
+  TEMPDATA = SpeciesNitrogenBreadth[which(SpeciesNitrogenBreadth$Strain == STRAIN[[i]]),]
+  tempObs = unique(TEMPDATA$Breadth)
+
+  tempListBreadth = list()
+  for(perm in 1:1000){
+    tempListBreadth[[perm]] = list()
+    tempDF1 = Nitrogen_PermutedData[[perm]]$CompiledData
+    TEMPPERMUTED = tempDF1[which(rownames(tempDF1) == STRAIN[[i]]),]
+    tempListBreadth[[perm]] = length(which(TEMPPERMUTED > 0))
+  }
+  
+  tempPerm = unlist(tempListBreadth)
+  N = sum(tempPerm >= tempObs)
+  p = zapsmall(binconf(N, length(tempPerm), method = "exact"))
+  
+  Nitrogen_FindGeneralist_df[k, 1] = STRAIN[[i]]
+  Nitrogen_FindGeneralist_df[k, 2] = unique(TEMPDATA$Species)
+  if(length(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"]) > 0){
+    Nitrogen_FindGeneralist_df[k, 3] = unique(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"])  
+  }else{
+    Nitrogen_FindGeneralist_df[k, 3] = "Not Recorded"
+  }
+  
+  Nitrogen_FindGeneralist_df[k, 4] = tempObs
+  Nitrogen_FindGeneralist_df[k, 5] = mean(tempPerm, na.rm = T)
+  Nitrogen_FindGeneralist_df[k, 6] = ecdf(tempPerm)(tempObs)
+  Nitrogen_FindGeneralist_df[k, 7] = N
+  Nitrogen_FindGeneralist_df[k, 8] = p[1]
+  k = k + 1
+}
+
+
+Nitrogen_FindGeneralist_df$Sig = rep("Not Signficant", nrow(Nitrogen_FindGeneralist_df))
+Nitrogen_FindGeneralist_df[which(Nitrogen_FindGeneralist_df$Pvalue <= 0.05), "Sig"] = "Significant"
+Nitrogen_FindGeneralist_df$Correction = p.adjust(Nitrogen_FindGeneralist_df$Pvalue, method = "BH")
+Nitrogen_FindGeneralist_df$Sig_adj = rep("Not Signficant", nrow(Nitrogen_FindGeneralist_df))
+Nitrogen_FindGeneralist_df[which(Nitrogen_FindGeneralist_df$Correction <= 0.05), "Sig_adj"] = "Significant"
+
+write.csv(Nitrogen_FindGeneralist_df, "AllData_Nitrogen_Generalists.csv")
+
+# Limited to significance after multiple tests correction
+
+Nitrogen_Generalist_df = Nitrogen_FindGeneralist_df[which(Nitrogen_FindGeneralist_df$Sig == "Significant"),]
+Nitrogen_Generalist_df$Classification = rep("Generalist", nrow(Nitrogen_Generalist_df))
+
+Nitrogen_FindSpecialist_df = data.frame(Strain = character(),
+                               Species = character(),
+                               Clade = character(),
+                               Observed = numeric(),
+                               Expected = numeric(),
+                               Percent = numeric(),
+                               Count = numeric(),
+                               Pvalue = numeric())
+k = 1
+for(i in 1:length(STRAIN)){
+  TEMPDATA = SpeciesNitrogenBreadth[which(SpeciesNitrogenBreadth$Strain == STRAIN[[i]]),]
+  tempObs = unique(TEMPDATA$Breadth)
+
+  tempListBreadth = list()
+  for(perm in 1:1000){
+    tempListBreadth[[perm]] = list()
+    tempDF1 = Nitrogen_PermutedData[[perm]]$CompiledData
+    TEMPPERMUTED = tempDF1[which(rownames(tempDF1) == STRAIN[[i]]),]
+    tempListBreadth[[perm]] = length(which(TEMPPERMUTED > 0))
+  }
+  
+  tempPerm = unlist(tempListBreadth)
+  N = sum(tempPerm <= tempObs)
+  p = zapsmall(binconf(N, length(tempPerm), method = "exact"))
+  
+  Nitrogen_FindSpecialist_df[k, 1] = STRAIN[[i]]
+  Nitrogen_FindSpecialist_df[k, 2] = unique(TEMPDATA$Species)
+  if(length(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"]) > 0){
+    Nitrogen_FindSpecialist_df[k, 3] = unique(MajorClades[which(MajorClades$Strain == TEMPDATA$Strain), "Clade"])  
+  }else{
+    Nitrogen_FindSpecialist_df[k, 3] = "Not Recorded"
+  }
+  
+  Nitrogen_FindSpecialist_df[k, 4] = tempObs
+  Nitrogen_FindSpecialist_df[k, 5] = mean(tempPerm, na.rm = T)
+  Nitrogen_FindSpecialist_df[k, 6] = ecdf(tempPerm)(tempObs)
+  Nitrogen_FindSpecialist_df[k, 7] = N
+  Nitrogen_FindSpecialist_df[k, 8] = p[1]
+  k = k + 1
+}
+
+
+Nitrogen_FindSpecialist_df$Sig = rep("Not Signficant", nrow(Nitrogen_FindSpecialist_df))
+Nitrogen_FindSpecialist_df[which(Nitrogen_FindSpecialist_df$Pvalue <= 0.05), "Sig"] = "Significant"
+Nitrogen_FindSpecialist_df$Correction = p.adjust(Nitrogen_FindSpecialist_df$Pvalue, method = "BH")
+Nitrogen_FindSpecialist_df$Sig_adj = rep("Not Signficant", nrow(Nitrogen_FindSpecialist_df))
+Nitrogen_FindSpecialist_df[which(Nitrogen_FindSpecialist_df$Correction <= 0.05), "Sig_adj"] = "Significant"
+
+write.csv(Nitrogen_FindSpecialist_df, "AllData_Nitrogen_Specialists.csv")
+
+# Limited to significance after multiple tests correction
+Nitrogen_Specialist_df = Nitrogen_FindSpecialist_df[which(Nitrogen_FindSpecialist_df$Sig == "Significant"),]
+Nitrogen_Specialist_df$Classification = rep("Specialist", nrow(Nitrogen_Specialist_df))
+
+#Creates one table of generalists and specialists after multiple tests corrections
+Nitrogen_Classification_df = rbind(Nitrogen_Generalist_df, Nitrogen_Specialist_df)
+Nitrogen_Classification_df = unique(Nitrogen_Classification_df)
+write.csv(Nitrogen_Classification_df, "Nitrogen_Classification_df_NotCorr.csv")
+
+GENSPECSPECIES = unique(Nitrogen_Classification_df$Strain)
+```
+
+
+Visualize the numbers of carbon generalists and specialists among the Saccharomycotina yeasts.
+```{r Comparisons of generalists specialists data breadth, , message= FALSE, warning= FALSE}
+
+#Generalist Specialists color scheme for carbon:
+# Use met.brewer with "Cross"
+# Generalists are #CD484B
+# Specialists are #014A61
+# Normal are #F69D36
+
+Breadth_GenSpecAll_Count_df = data.frame(Classification = c("Generalist", "Specialist", "Neither"), Count = c(nrow(Generalist_df), nrow(Specialist_df), (length(STRAIN) - nrow(Classification_df))), Proportion = c((nrow(Generalist_df)/length(STRAIN)), (nrow(Specialist_df)/length(STRAIN)), ((length(STRAIN)- nrow(Classification_df))/length(STRAIN)) ))
+
+a = ggplot(Breadth_GenSpecAll_Count_df, aes(x = reorder(Classification, Proportion), y = Proportion, fill = factor(Classification)))
+a = a + geom_bar(stat = "identity", color = "black")
+a = a + scale_fill_manual(values = c("#CD484B", "#F69D36", "#014A61"), name = "Classification")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 9, color = "black", vjust = 0.2),
+              legend.title = element_text(face = "bold"), 
+              axis.title = element_text(face = "bold"), 
+              strip.background = element_rect(fill = "white"), 
+              strip.text = element_text(face = "bold", size = 10),
+              legend.position = "none")
+a = a + xlab("Classification") + ylab("Proportion of Subphylum")
+a
+ggsave("Breadth_Proportions_GenSpecAll_NotCorr.pdf")
+ggsave("Breadth_Proportions_GenSpecAll_NotCorr.png", width = 6)
+
+Breadth_GenSpec_Count_df = data.frame(Classification = c("Generalist", "Specialist"), Count = c(nrow(Generalist_df), nrow(Specialist_df)), Proportion = c((nrow(Generalist_df)/nrow(Classification_df)), ((nrow(Specialist_df)/nrow(Classification_df)))))
+
+a = ggplot(Breadth_GenSpec_Count_df, aes(x = reorder(Classification, Proportion), y = Proportion, fill = factor(Classification)))
+a = a + geom_bar(stat = "identity", color = "black")
+a = a + scale_fill_manual(values = c("#CD484B","#014A61"), name = "Classification")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 9, color = "black", vjust = 0.2),
+              legend.title = element_text(face = "bold"), 
+              axis.title = element_text(face = "bold"), 
+              strip.background = element_rect(fill = "white"), 
+              strip.text = element_text(face = "bold", size = 10),
+              legend.position = "none")
+a = a + xlab("Classification") + ylab("Proportion of Subphylum")
+a
+ggsave("Breadth_Proportions_GenSpec_NotCorr.pdf")
+ggsave("Breadth_Proportions_GenSpec_NotCorr.png", width = 6)
+
+```
+
+Visualize the numbers of nitrogen generalists and specialists among the Saccharomycotina clades to determine whether there is overlap between breadth and % max generalists and specialists. This first portion is to get proportions of generalists and specialists for breadth.
+```{r Comparisons of generalists specialists data breadth, , message= FALSE, warning= FALSE}
+#Generalist Specialists color scheme for carbon:
+# Use met.brewer with "Cross"
+# Generalists are #C969A1
+# Specialists are #4C838D
+# Normal are #F69D36
+
+Nitrogen_Breadth_GenSpecAll_Count_df = data.frame(Classification = c("Generalist", "Specialist", "Neither"), Count = c(nrow(Nitrogen_Generalist_df), nrow(Nitrogen_Specialist_df), (length(STRAIN) - nrow(Nitrogen_Classification_df))), Proportion = c((nrow(Nitrogen_Generalist_df)/length(STRAIN)), (nrow(Nitrogen_Specialist_df)/length(STRAIN)), ((length(STRAIN)- nrow(Nitrogen_Classification_df))/length(STRAIN)) ))
+
+a = ggplot(Nitrogen_Breadth_GenSpecAll_Count_df, aes(x = reorder(Classification, Proportion), y = Proportion, fill = factor(Classification)))
+a = a + geom_bar(stat = "identity", color = "black")
+a = a + scale_fill_manual(values = c("#C969A1", "#F69D36", "#4C838D"), name = "Classification")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 9, color = "black", vjust = 0.2),
+              legend.title = element_text(face = "bold"), 
+              axis.title = element_text(face = "bold"), 
+              strip.background = element_rect(fill = "white"), 
+              strip.text = element_text(face = "bold", size = 10),
+              legend.position = "none")
+a = a + xlab("Classification") + ylab("Proportion of Subphylum")
+a
+ggsave("Nitrogen_Breadth_Proportions_GenSpecAll_NotCorr.pdf")
+ggsave("Nitrogen_Breadth_Proportions_GenSpecAll_NotCorr.png", width = 6)
+
+
+Nitrogen_Breadth_GenSpec_Count_df = data.frame(Classification = c("Generalist", "Specialist"), Count = c(nrow(Nitrogen_Generalist_df), nrow(Nitrogen_Specialist_df)), Proportion = c((nrow(Nitrogen_Generalist_df)/nrow(Nitrogen_Classification_df)), ((nrow(Nitrogen_Specialist_df)/nrow(Nitrogen_Classification_df)))))
+
+a = ggplot(Nitrogen_Breadth_GenSpec_Count_df, aes(x = reorder(Classification, Proportion), y = Proportion, fill = factor(Classification)))
+a = a + geom_bar(stat = "identity", color = "black")
+a = a + scale_fill_manual(values = c("#C969A1", "#4C838D"), name = "Classification")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 9, color = "black", vjust = 0.2),
+              legend.title = element_text(face = "bold"), 
+              axis.title = element_text(face = "bold"), 
+              strip.background = element_rect(fill = "white"), 
+              strip.text = element_text(face = "bold", size = 10),
+              legend.position = "none")
+a = a + xlab("Classification") + ylab("Proportion of Subphylum")
+a
+ggsave("Nitrogen_Breadth_Proportions_GenSpec_NotCorr.pdf")
+ggsave("Nitrogen_Breadth_Proportions_GenSpec_NotCorr.png", width = 6)
+
+```
+
+```{r Combined Carbon and Nitrogen Counts and proportions}
+Breadth_df = merge(SpeciesBreadth, SpeciesNitrogenBreadth, by = c("Strain", "Species", "Genus"))
+colnames(Breadth_df)[4:5] = c("Carbon_Breadth", "Nitrogen_Breadth")
+
+CARBONGEN = Classification_df[which(Classification_df$Classification == "Generalist"),"Strain"]
+CARBONSPEC = Classification_df[which(Classification_df$Classification == "Specialist"),"Strain"]
+
+NITROGENGEN = Nitrogen_Classification_df[which(Nitrogen_Classification_df$Classification == "Generalist"),"Strain"]
+NITROGENSPEC = Nitrogen_Classification_df[which(Nitrogen_Classification_df$Classification == "Specialist"),"Strain"]
+
+Breadth_df$Carb_Class = rep("Normal", nrow(Breadth_df))
+Breadth_df[which(Breadth_df$Strain %in% CARBONGEN), "Carb_Class"] = "Generalist"
+Breadth_df[which(Breadth_df$Strain %in% CARBONSPEC), "Carb_Class"] = "Specialist"
+
+
+Breadth_df$Nitr_Class = rep("Normal", nrow(Breadth_df))
+Breadth_df[which(Breadth_df$Strain %in% NITROGENGEN), "Nitr_Class"] = "Generalist"
+Breadth_df[which(Breadth_df$Strain %in% NITROGENSPEC), "Nitr_Class"] = "Specialist"
+write.csv(Breadth_df, "CarbNitr_breadth.csv")
+
+
+# Determine whether there is a significant difference in the number of metabolic strategy combinations using a chi-square analysis
+GenSpec_Info = Breadth_df[,c(6:7)]
+GenSpec_contingency = table(GenSpec_Info)
+GenSpec_chisq =chisq.test(GenSpec_contingency)
+
+#Plot the residuals of the chi-square analysis
+pdf("GenSpec_chi_Residualist.pdf")
+corrplot(GenSpec_chisq$residuals, is.cor = FALSE, col = met.brewer("Cross", n = 20),outline = "black", addgrid.col = "black", tl.col = "black")
+dev.off()
+
+png("GenSpec_chi_Residualist.png")
+corrplot(GenSpec_chisq$residuals, is.cor = FALSE, col = met.brewer("Cross", n = 20),outline = "black", addgrid.col = "black", tl.col = "black")
+dev.off()
+
+#Determine the contributions of each combination to the chi-square test
+contrib <- 100*GenSpec_chisq$residuals^2/GenSpec_chisq$statistic
+round(contrib, 3)
+
+#Plot the contributions of the combinations
+pdf("GenSpec_chi_Contributions.pdf")
+corrplot(contrib, is.cor = FALSE, col = met.brewer("Cross", n = 20), outline = "black", addgrid.col = "black", tl.col = "black")
+dev.off()
+
+png("GenSpec_chi_Contributions.png")
+corrplot(contrib, is.cor = FALSE, col = met.brewer("Cross", n = 20), outline = "black", addgrid.col = "black", tl.col = "black")
+dev.off()
+
+
+CLASS = unique(Breadth_df$Carb_Class)
+GenSpec_Counts = data.frame(Carbon = character(),
+                              Nitrogen = character(),
+                              Count = numeric(),
+                              Proportion = numeric())
+k = 1
+for(i in 1:length(CLASS)){
+  for(j in 1:length(CLASS)){
+    TEMP = length(which(Breadth_df$Carb_Class == CLASS[[i]] & Breadth_df$Nitr_Class == CLASS[[j]]))
+    GenSpec_Counts[k,1] = CLASS[[i]]
+    GenSpec_Counts[k,2] = CLASS[[j]]
+    GenSpec_Counts[k,3] = TEMP
+    GenSpec_Counts[k,4] = TEMP/nrow(Breadth_df)
+    k = k+1
+  }
+}
+
+GenSpec_Counts$Classification = rep("Normal", nrow(GenSpec_Counts))
+for(i in 1:nrow(GenSpec_Counts)){
+  GenSpec_Counts[i,"Classification"] = paste("Carbon:", GenSpec_Counts[i,"Carbon"], "Nitrogen:", GenSpec_Counts[i,"Nitrogen"], sep = "")
+}
+
+GenSpec_Counts2 = GenSpec_Counts[-which(GenSpec_Counts$Carbon == "Normal" & GenSpec_Counts$Nitrogen == "Normal"),]
+
+m = ggplot(GenSpec_Counts2, aes(x = Classification, y = Count, fill = factor(Classification)))
+m = m + geom_bar(stat = "identity")
+m = m + scale_fill_manual(values = met.brewer("Cross", n = length(unique(GenSpec_Counts2$Classification))), name = "Classification")
+m = m + xlab("Classification") + ylab("Count")
+m = m + scale_y_continuous(expand = c(0, 0))
+m = m + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_blank(),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold"),
+			  legend.position = "bottom"
+              )
+ggsave("GenSpecCount.pdf", width = 15)
+ggsave("GenSpecCount.png", width = 15)
+
+GenSpec_Counts$Carbon <- factor(GenSpec_Counts$Carbon, levels=c('Specialist', 'Normal', 'Generalist'))
+GenSpec_Counts3 <- GenSpec_Counts[order(GenSpec_Counts$Carbon),]
+
+m = ggplot(GenSpec_Counts3, aes(x = Nitrogen, y = Count, fill = Carbon, group = Nitrogen))
+m = m + geom_bar(position = "fill", stat = "identity")
+m = m + scale_fill_manual(values = c(Generalist = "#02466E", Normal = "#FBE183", Specialist = "#9F5691"), name = "Carbon Classification")
+m = m + xlab("Nitrogen Classification") + ylab("Frequency")
+m = m + scale_x_discrete(limits=c("Specialist","Normal","Generalist"))
+m = m + scale_y_continuous(expand = c(0, 0))
+m = m + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold"))
+ggsave("StackedCarbon_NitrogenProportion.pdf", height = 5, width = 7.5)
+ggsave("StackedCarbon_NitrogenProportion.png", height = 5, width = 7.5)
+
+Breadth_df[which(Breadth_df$Carb_Class == "Specialist" & Breadth_df$Nitr_Class == "Generalist"),]
+
+
+a = ggplot(Breadth_df, aes(x = Carb_Class, y = Carbon_Breadth, fill = factor(Carb_Class)))
+a = a + geom_violin(scale = "count", show.legend = T)
+#a = a + geom_jitter(position=position_jitter(0.2))
+a = a + scale_fill_manual(values = c("#02466e", "#fbe183", "#9f5691"), name = "Carbon Classification")
+a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_text(size = 10, vjust = 0.2,color = "black"),
+              strip.background = element_rect(colour="white", fill= "white"), 
+              strip.text.x = element_text(face = "bold"), 
+              axis.ticks.x = element_blank(), 
+              legend.title = element_text(face = "bold"), 
+              axis.ticks = element_blank() )
+a = a + xlab("Classification") + ylab("Carbon Breadth")
+ggsave("Carbon_Violin.pdf", height = 7.5, width = 7.5)
+ggsave("Carbon_Violin.png")
+
+
+Breadth_df %>%
+  filter(Carb_Class %in% c("Generalist", "Specialist", "Normal")) %>%
+  ggplot(aes(x = Carb_Class, y = Carbon_Breadth, fill = factor(Carb_Class))) +
+  ggdist::stat_halfeye(adjust = 0.5, justification = -.2, .width = 0, point_colour = NA ) +
+  geom_boxplot(width = .12, outlier.color = NA, alpha = 0.5) +
+  ggdist::stat_dots(side = "left", justification = 1.1, binwidth = .25) +
+  scale_fill_tq() +
+  theme_tq() +
+  labs(x = "Classification", y = "Carbon Breadth", fill = "Classification") +
+  coord_flip()
+ggsave("YeastClass_Distribution.pdf", height = 10, width = 10)
+
+```
+
+__Similarities among Generalists__
+Are all generalists the same? Look for overlap in growth traits among generalists. Look for clusters of generalists based on growth similarities
+```{r Generalist clusters}
+
+AllBinary_m = Sugar_m
+
+for(i in 4:ncol(AllBinary_m)){
+  AllBinary_m[which(AllBinary_m[,i] > 0), i] = 1
+}
+
+write.csv(AllBinary_m, file = "BinarySugar_m.csv")
+
+```
