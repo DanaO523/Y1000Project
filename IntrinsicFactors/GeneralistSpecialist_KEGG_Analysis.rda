@@ -1,0 +1,2302 @@
+options(stringsAsFactors = FALSE)
+
+library(reshape)
+library(ggplot2)
+library(igraph)
+library(vegan)
+library(pheatmap)
+library(dendextend)
+library(RColorBrewer)
+library(MetBrewer)
+library(ggdist)
+library(tinyquant)
+library(tidyverse)
+library(pdfCluster)
+library(rstatix)
+library(ggpubr)
+
+PUMatch = read.csv("PU_AssemblyMatch.csv", header = TRUE)
+KO_EC = read.csv("EnzymeInfo_6-17-2022.csv", header = TRUE)
+KO_Path = read.csv("Kegg_Enzymes.csv", header = TRUE)
+KO_Reaction = read.csv("Reaction_table_6-17-22.csv", header = TRUE)
+EC_Reaction = read.csv("Enzyme_Reaction_6-17-22.csv", header = TRUE)
+Sugar_m = read.csv("BinarySugar_m.csv", header = TRUE)
+GenSpec_df = read.csv("Classification_df_2022-10-14.csv", header = TRUE)
+
+# setwd("/mnt/bigdata/linuxhome/dana.opulente/annotations_aa_kegg_fixed_8-4-2022/")
+# Y1000SPECIES = unlist(list.files())
+
+# Y1000_list = list()
+# Y1000_KEGG_df = data.frame()
+# for(i in 1:length(Y1000SPECIES)){
+	# Y1000_list[[i]] = list()
+	# filename = paste(Y1000SPECIES[i]) # Creates an object name for each plate
+	# NAME = strsplit(filename, fixed = TRUE, split = ".")[[1]][[1]]
+	# assign(paste(filename), read.delim(filename, header = FALSE))
+	# TEMP = get(filename)
+	# Species = rep(filename, nrow(TEMP))
+	# TEMP = cbind(Species, TEMP)
+	
+	# if(length(which(PUMatch$assembly_fullID == NAME)) > 0){
+		# pu = PUMatch[which(PUMatch$assembly_fullID == NAME), "PU"]
+		# PU = rep(pu, nrow(TEMP))
+		# TEMP = cbind(PU, TEMP)
+	# }else{
+		# PU = rep(NA, nrow(TEMP))
+		# TEMP$PU = PU
+	# }
+	# Y1000_KEGG_df = rbind(Y1000_KEGG_df, TEMP)
+	# Y1000_list[[i]]$KEGG = TEMP
+# }
+
+#setwd("/mnt/bigdata/linuxhome/dana.opulente/GeneralistSpecialist_Analysis_8-4-2022/")
+
+Y1000_KEGG_df3 = unique(Y1000_KEGG_df[which(is.na(Y1000_KEGG_df$PU) == FALSE),])
+
+Y1000_KEGG_df4 = unique(Y1000_KEGG_df3)
+KEGGAnnot_m = table(Y1000_KEGG_df3$V2, Y1000_KEGG_df3$PU)
+
+GenSpec_Info = GenSpec_df[,c(2, 13)]
+GENERALIST = GenSpec_Info[which(GenSpec_Info$Classification == "Generalist"), "Strain"]
+SPECIALIST = GenSpec_Info[which(GenSpec_Info$Classification == "Specialist"), "Strain"]
+
+Strain_Info = unique(Y1000_KEGG_df3[,c(1,3,4)])
+Strain_Info$Classification = rep("Normal", nrow(Strain_Info))
+Strain_Info[which(Strain_Info$PU %in% GENERALIST), "Classification"] = "Generalist"
+Strain_Info[which(Strain_Info$PU %in% SPECIALIST), "Classification"] = "Specialist"
+
+#rownames(Strain_Info) = Strain_Info$PU
+Strain_Info2 = data.frame(Classification = Strain_Info[,4])
+Strain_Info2$PU = Strain_Info$PU
+Strain_Info2 = unique(Strain_Info2)
+rownames(Strain_Info2) = Strain_Info2$PU
+
+write.csv(KEGGAnnot_m, file = paste("KEGGAnnot_m,", Sys.Date(), ".csv", sep = "_"))
+
+########################
+KO_Reaction = melt(KO_Reaction, id.vars = "X.KO", na.rm = FALSE)
+KO_Reaction = KO_Reaction[,c(1,3)]
+colnames(KO_Reaction) = c("KEGG", "Reaction")
+
+KO_Reaction = KO_Reaction[which(is.na(KO_Reaction$Reaction) == FALSE),]
+
+Y1000_KO_list = list()
+for(i in 1:length(Y1000_list)){
+	Y1000_KO_list[[i]] = list()
+	TEMP = Y1000_list[[i]]$KEGG
+	TEMPEC = merge(TEMP, KO_EC, by.x = "V2", by.y = "X.KO")
+	TEMPPath = merge(TEMP, KO_Path, by.x = "V2", by.y = "KEGG")
+	TEMPReaction = merge(TEMP, KO_Reaction, by.x = "V2", by.y = "KEGG")
+	Y1000_KO_list[[i]]$KO = TEMP
+	Y1000_KO_list[[i]]$Enzyme = TEMPEC
+	Y1000_KO_list[[i]]$Pathway = TEMPPath
+	Y1000_KO_list[[i]]$Reaction = TEMPReaction
+}
+
+KEGG = unique(KO_Reaction$KEGG)
+PU = unique(Strain_Info2$PU)
+
+KEGG_m = matrix(0, nrow = length(PU), ncol = length(KEGG))
+rownames(KEGG_m) = PU
+colnames(KEGG_m) = KEGG
+
+for(i in 1:length(Y1000_KO_list)){
+	TEMP = Y1000_KO_list[[i]]$KO
+	STRAIN = unique(TEMP$PU)
+	ROW = which(rownames(KEGG_m) == STRAIN)
+	if(length(ROW) > 0){
+		TEMPKEGG = unique(TEMP$V2)
+		KEGG_m[ROW, which(colnames(KEGG_m) %in% TEMPKEGG)] = 1
+	}
+}
+
+KEGGCounts = data.frame(KEGG = colnames(KEGG_m), Count = colSums(KEGG_m), Proportion = (colSums(KEGG_m)/nrow(KEGG_m)))
+KEGGCounts_df = KEGGCounts[which(KEGGCounts$Count > 0),]
+
+NotVariable = KEGGCounts[which(KEGGCounts$Proportion == 1), "KEGG"]
+
+
+write.csv(KEGG_m, file = paste("KEGG_m", Sys.Date(), ".csv", sep = "_"))
+
+GENSPEC = unique(GenSpec_Info[which(GenSpec_Info$Classification %in% c("Generalist", "Specialist")), "Strain"])
+
+
+GenSpec_KEGG_m = KEGG_m[which(rownames(KEGG_m) %in% GENSPEC),]
+
+GenSpec_KEGGCounts = data.frame(KEGG = colnames(GenSpec_KEGG_m), Count = colSums(GenSpec_KEGG_m), Proportion = (colSums(GenSpec_KEGG_m)/nrow(GenSpec_KEGG_m)))
+GenSpec_KEGGCounts_df = KEGGCounts[which(KEGGCounts$Count > 0),]
+
+GenSpec_NotVariable = KEGGCounts[which(KEGGCounts$Proportion == 1), "KEGG"]
+
+
+PATH = unique(KO_Path$Path)
+
+Pathway_m = matrix(0, nrow = length(PU), ncol = length(PATH))
+rownames(Pathway_m) = PU
+colnames(Pathway_m) = PATH
+
+for(i in 1:length(Y1000_KO_list)){
+	TEMP = Y1000_KO_list[[i]]$Pathway
+	STRAIN = unique(TEMP$PU)
+	ROW = which(rownames(Pathway_m) == STRAIN)
+	if(length(ROW) > 0){
+		TEMPPATH = unique(TEMP$Path)
+		Pathway_m[ROW, which(colnames(Pathway_m) %in% TEMPPATH)] = 1
+	}
+}
+
+write.csv(Pathway_m, file = paste("Pathway_m", Sys.Date(), ".csv"))
+
+
+PhenotypedStrains = rownames(Pathway_m)[which(rownames(Pathway_m) %in% Sugar_m$PU)]
+write.csv(PhenotypedStrains, file = paste("Genome_Phenotyped_Yeasts", Sys.Date(), ".csv", sep = "_"))
+
+
+Pathway_m2 = unique(Pathway_m[which(rownames(Pathway_m) %in% PhenotypedStrains),])
+
+
+ENZYME = unique(KO_EC$EC.number)
+
+Enzyme_m = matrix(0, nrow = length(PU), ncol = length(ENZYME))
+rownames(Enzyme_m) = PU
+colnames(Enzyme_m) = ENZYME
+
+for(i in 1:length(Y1000_KO_list)){
+	TEMP = Y1000_KO_list[[i]]$Enzyme
+	STRAIN = unique(TEMP$PU)
+	ROW = which(rownames(Enzyme_m) == STRAIN)
+	if(length(ROW) > 0){
+		TEMPENZ = unique(TEMP$EC.number)
+		Enzyme_m[ROW, which(colnames(Enzyme_m) %in% TEMPENZ)] = 1
+	}
+}
+write.csv(Enzyme_m, file = paste("Enzyme_m", Sys.Date(), ".csv"))
+
+RNX = unique(KO_Reaction$Reaction)
+
+Reaction_m = matrix(0, nrow = length(PU), ncol = length(RNX))
+rownames(Reaction_m) = PU
+colnames(Reaction_m) = RNX
+
+for(i in 1:length(Y1000_KO_list)){
+	TEMP = Y1000_KO_list[[i]]$Reaction
+	STRAIN = unique(TEMP$PU)
+	ROW = which(rownames(Enzyme_m) == STRAIN)
+	if(length(ROW) > 0){
+		TEMPRNX = unique(TEMP$Reaction)
+		Reaction_m[ROW, which(colnames(Reaction_m) %in% TEMPRNX)] = 1
+	}
+}
+
+write.csv(Reaction_m, file = paste("Reaction_m", Sys.Date(), ".csv"))
+
+
+KORnx_Enzyme_Comb = merge(KO_Reaction, EC_Reaction, by = "Reaction")
+KORnx_Enzyme_Comb = unique(KORnx_Enzyme_Comb)
+
+KORnxEC_df = KORnx_Enzyme_Comb[,c(1:3)]
+
+KOEC_Reaction_Comb = merge(KO_EC, EC_Reaction, by.x = "EC.number", by.y = "Enzyme")
+KOEC_Reaction_Comb = unique(KOEC_Reaction_Comb)
+KOECRnx_df = KOEC_Reaction_Comb[,c(4,2,1)]
+colnames(KOECRnx_df) = c("Reaction", "KEGG", "Enzyme")
+
+KOECRnx_df = rbind(KORnxEC_df, KOECRnx_df)
+KOECRnx_df = unique(KOECRnx_df)
+
+KOECRnx_list = list()
+for(i in 1:nrow(KOECRnx_df)){
+	KOECRnx_list[[i]] = list()
+	REACTION = KOECRnx_df[i, "Reaction"]
+	TEMPRNX = EC_Reaction[which(EC_Reaction$Reaction == REACTION),]
+	KOECRnx_list[[i]]$Info = KOECRnx_df[i, ] 
+	KOECRnx_list[[i]]$Enzyme = list()
+	for(j in 1:nrow(TEMPRNX)){
+		KOECRnx_list[[i]]$Enzyme[[j]] = list()
+		KOECRnx_list[[i]]$Enzyme[[j]] = TEMPRNX[j,]
+	}
+}
+
+RNX = unique(KOECRnx_df$Reaction)
+EC = unique(KOECRnx_df$Enzyme)
+
+ECRnx_m = matrix(0, nrow = length(RNX), ncol = length(EC))
+rownames(ECRnx_m) = RNX
+colnames(ECRnx_m) = EC
+
+for(i in 1:length(RNX)){
+	ECTEMP = unique(KOECRnx_df[which(KOECRnx_df$Reaction == RNX[[i]]), "Enzyme"])
+	ECRnx_m[i,which(colnames(ECRnx_m) %in% ECTEMP)] = 1
+}
+	
+write.csv(ECRnx_m, file = paste("ECRnx_m", Sys.Date(), ".csv"))
+
+
+
+##### Number of KEGGs per Enzyme #####
+
+KOEnzymeCount_m = matrix(0, nrow = length(PU), ncol = length(EC))
+rownames(KOEnzymeCount_m) = PU
+colnames(KOEnzymeCount_m) = EC
+								
+for(i in 1:length(Y1000_KO_list)){
+	TEMP = Y1000_KO_list[[i]]$Enzyme
+	TEMPPU = unique(TEMP$PU)
+	if(is.na(TEMPPU) == FALSE)
+		TEMPKEGG = unique(TEMP$EC.number)
+		ROW = which(rownames(KOEnzymeCount_m) == TEMPPU)
+		for(j in 1:length(TEMPKEGG)){
+			COL = which(colnames(KOEnzymeCount_m) == TEMPKEGG[[j]])
+			KOEnzymeCount_m[ROW, COL] = length(which(TEMP$EC == TEMPKEGG[[j]]))
+		}
+	}
+}
+
+write.csv(KOEnzymeCount_m, file = paste("KOEnzymeCount_m_", Sys.Date(), ".csv"))
+
+
+EnzymeMinMax_df = data.frame(EC = character(),
+								Min = numeric(),
+								Max = numeric())
+
+for(i in 1:ncol(KOEnzymeCount_m)){
+	EnzymeMinMax_df[i, 1] = colnames(KOEnzymeCount_m)[i]
+	EnzymeMinMax_df[i, 2] = min(KOEnzymeCount_m[,i], na.rm = TRUE)
+	EnzymeMinMax_df[i, 3] = max(KOEnzymeCount_m[,i], na.rm = TRUE)
+}
+
+
+EnzymeMinMax_df$Same = rep("Different", nrow(EnzymeMinMax_df))
+EnzymeMinMax_df[which(EnzymeMinMax_df$Min == EnzymeMinMax_df$Max), "Same"] = "Same"
+
+write.csv(EnzymeMinMax_df, file = paste("EnzymeMinMax_df_", Sys.Date(), ".csv"))
+
+ECSAMEACROSS = EnzymeMinMax_df[which(EnzymeMinMax_df$Same == "Same"), "EC"]
+
+KOEnzymeCount_m2 = KOEnzymeCount_m[, -which(colnames(KOEnzymeCount_m) %in% ECSAMEACROSS)]
+
+
+GENERALISTS = GenSpec_Info[which(GenSpec_Info$Classification == "Generalist"), "Strain"]
+SPECIALISTS = GenSpec_Info[which(GenSpec_Info$Classification == "Specialist"), "Strain"]
+
+
+GenSpecEnzymeCount_df = data.frame(EC = character(),
+									Gen_Missing = numeric(),
+									Gen_MissingProp = numeric(),
+									Gen_Single = numeric(),
+									Gen_SingleProp = numeric(),
+									Gen_Multiple = numeric(),
+									Gen_MultipleProp = numeric(),
+									Std_Missing = numeric(),
+									Std_MissingProp = numeric(),
+									Std_Single = numeric(),
+									Std_SingleProp = numeric(),
+									Std_Multiple = numeric(),
+									Std_MultipleProp = numeric(),
+									Spec_Missing = numeric(),
+									Spec_MissingProp = numeric(),
+									Spec_Single = numeric(),
+									Spec_SingleProp = numeric(),
+									Spec_Multiple = numeric(),
+									Spec_MultipleProp = numeric())
+									
+for(i in 1:ncol(KOEnzymeCount_m2)){
+	GenSpecEnzymeCount_df[i,1] = colnames(KOEnzymeCount_m2)[i]
+	GENERALISTTEMP = KOEnzymeCount_m2[which(rownames(KOEnzymeCount_m2) %in% GENERALISTS),i]
+	SPECIALISTTEMP = KOEnzymeCount_m2[which(rownames(KOEnzymeCount_m2) %in% SPECIALISTS),i]
+	STANDARDTEMP = KOEnzymeCount_m2[-which(rownames(KOEnzymeCount_m2) %in% c(GENERALISTS, SPECIALISTS)),i]
+	GenSpecEnzymeCount_df[i,2] = length(which(GENERALISTTEMP == 0))
+	GenSpecEnzymeCount_df[i,3] = length(which(GENERALISTTEMP == 0))/length(GENERALISTTEMP)
+	GenSpecEnzymeCount_df[i,4] = length(which(GENERALISTTEMP == 1))
+	GenSpecEnzymeCount_df[i,5] = length(which(GENERALISTTEMP == 1))/length(GENERALISTTEMP)
+	GenSpecEnzymeCount_df[i,6] = length(which(GENERALISTTEMP > 1))
+	GenSpecEnzymeCount_df[i,7] = length(which(GENERALISTTEMP > 1))/length(GENERALISTTEMP)
+	GenSpecEnzymeCount_df[i,8] = length(which(STANDARDTEMP == 0))
+	GenSpecEnzymeCount_df[i,9] = length(which(STANDARDTEMP == 0))/length(STANDARDTEMP)
+	GenSpecEnzymeCount_df[i,10] = length(which(STANDARDTEMP == 1))
+	GenSpecEnzymeCount_df[i,11] = length(which(STANDARDTEMP == 1))/length(STANDARDTEMP)
+	GenSpecEnzymeCount_df[i,12] = length(which(STANDARDTEMP > 1))
+	GenSpecEnzymeCount_df[i,13] = length(which(STANDARDTEMP > 1))/length(STANDARDTEMP)
+	GenSpecEnzymeCount_df[i,14] = length(which(SPECIALISTTEMP == 0))
+	GenSpecEnzymeCount_df[i,15] = length(which(SPECIALISTTEMP == 0))/length(SPECIALISTTEMP)
+	GenSpecEnzymeCount_df[i,16] = length(which(SPECIALISTTEMP == 1))
+	GenSpecEnzymeCount_df[i,17] = length(which(SPECIALISTTEMP == 1))/length(SPECIALISTTEMP)
+	GenSpecEnzymeCount_df[i,18] = length(which(SPECIALISTTEMP > 1))
+	GenSpecEnzymeCount_df[i,19] = length(which(SPECIALISTTEMP > 1))/length(SPECIALISTTEMP)
+}
+
+Count_GenSpecEnzyme_df = GenSpecEnzymeCount_df[, c(1, 2, 4, 6, 8, 10, 12, 14, 16, 18)]
+Prop_GenSpecEnzyme_df = GenSpecEnzymeCount_df[,c(1, 3, 5, 7, 9, 11, 13, 15, 17, 19)]
+
+GenSpec_EnzymeProp_df = melt(Prop_GenSpecEnzyme_df)
+colnames(GenSpec_EnzymeProp_df) = c("Enzyme", "Info", "Proportion")
+GenSpec_EnzymeProp_df$Classification = rep("Standard", nrow(GenSpec_EnzymeProp_df))
+
+GenSpec_EnzymeProp_df[which(GenSpec_EnzymeProp_df$Info %in% c("Gen_MissingProp", "Gen_SingleProp", "Gen_MultipleProp")), "Classification"] = "Generalist"
+GenSpec_EnzymeProp_df[which(GenSpec_EnzymeProp_df$Info %in% c("Spec_MissingProp", "Spec_SingleProp", "Spec_MultipleProp")), "Classification"] = "Specialist"
+
+GenSpec_EnzymeProp_df$Info = as.character(GenSpec_EnzymeProp_df$Info)
+
+GenSpec_EnzymeProp_df[which(GenSpec_EnzymeProp_df$Info %in% c("Gen_MissingProp", "Std_MissingProp", "Spec_MissingProp")), "Info"] = "Missing"
+GenSpec_EnzymeProp_df[which(GenSpec_EnzymeProp_df$Info %in% c("Gen_SingleProp", "Std_SingleProp", "Spec_SingleProp")), "Info"] = "Single"
+GenSpec_EnzymeProp_df[which(GenSpec_EnzymeProp_df$Info %in% c("Gen_MultipleProp", "Std_MultipleProp", "Spec_MultipleProp")), "Info"] = "Multiple"
+
+
+a = ggplot(GenSpec_EnzymeProp_df, aes(x = Info, y = Proportion, fill = Classification))
+a = a + geom_boxplot()
+a = a + xlab("Enzyme Copies") + ylab("Proportion of Individuals")
+#a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+             panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), 
+             axis.line.x = element_line(color = "black"), 
+             axis.line.y = element_line(color = "black"),
+             axis.title = element_text(face = "bold"), 
+             legend.title = element_text(face = "bold"),
+             strip.background = element_rect(fill = "white"),
+             strip.text.y = element_text(face = "bold"),
+			 legend.position = "bottom"
+             )
+ggsave(paste("GenSpec_EnzymeProp_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+
+GenSpec_EnzymeProp_df2 = GenSpec_EnzymeProp_df[-which(GenSpec_EnzymeProp_df$Classification == "Standard"),]
+
+a = ggplot(GenSpec_EnzymeProp_df2, aes(x = Info, y = Proportion, fill = Classification))
+a = a + geom_boxplot()
+a = a + xlab("Enzyme Copies") + ylab("Proportion of Individuals")
+#a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+             panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), 
+             axis.line.x = element_line(color = "black"), 
+             axis.line.y = element_line(color = "black"),
+             axis.title = element_text(face = "bold"), 
+             legend.title = element_text(face = "bold"),
+             strip.background = element_rect(fill = "white"),
+             strip.text.y = element_text(face = "bold"),
+			 legend.position = "bottom"
+             )
+ggsave(paste("GenSpecOnly_EnzymeProp_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+GenSpec_EnzymeCount_df = melt(Count_GenSpecEnzyme_df)
+colnames(GenSpec_EnzymeCount_df) = c("Enzyme", "Info", "Count")
+GenSpec_EnzymeCount_df$Classification = rep("Standard", nrow(GenSpec_EnzymeCount_df))
+
+GenSpec_EnzymeCount_df[which(GenSpec_EnzymeCount_df$Info %in% c("Gen_Missing", "Gen_Single", "Gen_Multiple")), "Classification"] = "Generalist"
+GenSpec_EnzymeCount_df[which(GenSpec_EnzymeCount_df$Info %in% c("Spec_Missing", "Spec_Single", "Spec_Multiple")), "Classification"] = "Specialist"
+
+GenSpec_EnzymeCount_df$Info = as.character(GenSpec_EnzymeCount_df$Info)
+
+GenSpec_EnzymeCount_df[which(GenSpec_EnzymeCount_df$Info %in% c("Gen_Missing", "Std_Missing", "Spec_Missing")), "Info"] = "Missing"
+GenSpec_EnzymeCount_df[which(GenSpec_EnzymeCount_df$Info %in% c("Gen_Single", "Std_Single", "Spec_Single")), "Info"] = "Single"
+GenSpec_EnzymeCount_df[which(GenSpec_EnzymeCount_df$Info %in% c("Gen_Multiple", "Std_Multiple", "Spec_Multiple")), "Info"] = "Multiple"
+
+GenSpec_EnzymeCount_df2 = GenSpec_EnzymeCount_df[-which(GenSpec_EnzymeCount_df$Classification == "Standard"),]
+a = ggplot(GenSpec_EnzymeCount_df2, aes(x = Info, y = Count, fill = Classification))
+a = a + geom_boxplot()
+a = a + xlab("Enzyme Copies") + ylab("Count of Individuals")
+#a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+             panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), 
+             axis.line.x = element_line(color = "black"), 
+             axis.line.y = element_line(color = "black"),
+             axis.title = element_text(face = "bold"), 
+             legend.title = element_text(face = "bold"),
+             strip.background = element_rect(fill = "white"),
+             strip.text.y = element_text(face = "bold"),
+			 legend.position = "bottom"
+             )
+ggsave(paste("GenSpec_EnzymeCount_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+
+##### Number of Enzymes per KEGG #####
+
+KOCount_m = matrix(0, nrow = length(PU), ncol = length(KEGG))
+rownames(KOCount_m) = PU
+colnames(KOCount_m) = KEGG
+								
+for(i in 1:length(Y1000_KO_list)){
+	TEMP = Y1000_KO_list[[i]]$Enzyme
+	TEMPPU = unique(TEMP$PU)
+	if(is.na(TEMPPU) == FALSE){
+		TEMPKEGG = unique(TEMP$V2)
+		ROW = which(rownames(KOCount_m) == TEMPPU)
+		for(j in 1:length(TEMPKEGG)){
+			COL = which(colnames(KOCount_m) == TEMPKEGG[[j]])
+			KOCount_m[ROW, COL] = length(which(TEMP$V2 == TEMPKEGG[[j]]))
+		}
+	}
+}
+
+write.csv(KOCount_m, file = paste("KOCount_m_", Sys.Date(), ".csv"))
+
+KEGGMinMax_df = data.frame(KEGG = character(),
+								Min = numeric(),
+								Max = numeric())
+
+for(i in 1:ncol(KOCount_m)){
+	KEGGMinMax_df[i, 1] = colnames(KOCount_m)[i]
+	KEGGMinMax_df[i, 2] = min(KOCount_m[,i], na.rm = TRUE)
+	KEGGMinMax_df[i, 3] = max(KOCount_m[,i], na.rm = TRUE)
+}
+
+KEGGMinMax_df$Same = rep("Different", nrow(KEGGMinMax_df))
+KEGGMinMax_df[which(KEGGMinMax_df$Min == KEGGMinMax_df$Max), "Same"] = "Same"
+
+write.csv(KEGGMinMax_df, file = paste("KEGGMinMax_df_", Sys.Date(), ".csv"))
+
+#KEGGSAMEACROSS = EnzymeMinMax_df[which(KEGGMinMax_df$Same == "Same"), "KEGG"]
+
+#KOCount_m2 = KOCount_m[, -which(colnames(KOCount_m) %in% KEGGSAMEACROSS)]
+KOCount_m2 = KOCount_m
+
+GenSpecKEGGCount_df = data.frame(EC = character(),
+									Gen_Missing = numeric(),
+									Gen_MissingProp = numeric(),
+									Gen_Single = numeric(),
+									Gen_SingleProp = numeric(),
+									Gen_Multiple = numeric(),
+									Gen_MultipleProp = numeric(),
+									Std_Missing = numeric(),
+									Std_MissingProp = numeric(),
+									Std_Single = numeric(),
+									Std_SingleProp = numeric(),
+									Std_Multiple = numeric(),
+									Std_MultipleProp = numeric(),
+									Spec_Missing = numeric(),
+									Spec_MissingProp = numeric(),
+									Spec_Single = numeric(),
+									Spec_SingleProp = numeric(),
+									Spec_Multiple = numeric(),
+									Spec_MultipleProp = numeric())
+									
+for(i in 1:ncol(KOCount_m2)){
+	GenSpecKEGGCount_df[i,1] = colnames(KOCount_m2)[i]
+	GENERALISTTEMP = KOCount_m2[which(rownames(KOCount_m2) %in% GENERALISTS),i]
+	SPECIALISTTEMP = KOCount_m2[which(rownames(KOCount_m2) %in% SPECIALISTS),i]
+	STANDARDTEMP = KOCount_m2[-which(rownames(KOCount_m2) %in% c(GENERALISTS, SPECIALISTS)),i]
+	GenSpecKEGGCount_df[i,2] = length(which(GENERALISTTEMP == 0))
+	GenSpecKEGGCount_df[i,3] = length(which(GENERALISTTEMP == 0))/length(GENERALISTTEMP)
+	GenSpecKEGGCount_df[i,4] = length(which(GENERALISTTEMP == 1))
+	GenSpecKEGGCount_df[i,5] = length(which(GENERALISTTEMP == 1))/length(GENERALISTTEMP)
+	GenSpecKEGGCount_df[i,6] = length(which(GENERALISTTEMP > 1))
+	GenSpecKEGGCount_df[i,7] = length(which(GENERALISTTEMP > 1))/length(GENERALISTTEMP)
+	GenSpecKEGGCount_df[i,8] = length(which(STANDARDTEMP == 0))
+	GenSpecKEGGCount_df[i,9] = length(which(STANDARDTEMP == 0))/length(STANDARDTEMP)
+	GenSpecKEGGCount_df[i,10] = length(which(STANDARDTEMP == 1))
+	GenSpecKEGGCount_df[i,11] = length(which(STANDARDTEMP == 1))/length(STANDARDTEMP)
+	GenSpecKEGGCount_df[i,12] = length(which(STANDARDTEMP > 1))
+	GenSpecKEGGCount_df[i,13] = length(which(STANDARDTEMP > 1))/length(STANDARDTEMP)
+	GenSpecKEGGCount_df[i,14] = length(which(SPECIALISTTEMP == 0))
+	GenSpecKEGGCount_df[i,15] = length(which(SPECIALISTTEMP == 0))/length(SPECIALISTTEMP)
+	GenSpecKEGGCount_df[i,16] = length(which(SPECIALISTTEMP == 1))
+	GenSpecKEGGCount_df[i,17] = length(which(SPECIALISTTEMP == 1))/length(SPECIALISTTEMP)
+	GenSpecKEGGCount_df[i,18] = length(which(SPECIALISTTEMP > 1))
+	GenSpecKEGGCount_df[i,19] = length(which(SPECIALISTTEMP > 1))/length(SPECIALISTTEMP)
+}
+
+Count_GenSpecKEGG_df = GenSpecKEGGCount_df[, c(1, 2, 4, 6, 8, 10, 12, 14, 16, 18)]
+Prop_GenSpecKEGG_df = GenSpecKEGGCount_df[,c(1, 3, 5, 7, 9, 11, 13, 15, 17, 19)]
+
+GenSpec_KEGGProp_df = melt(Prop_GenSpecKEGG_df)
+colnames(GenSpec_KEGGProp_df) = c("KEGG", "Info", "Proportion")
+GenSpec_KEGGProp_df$Classification = rep("Standard", nrow(GenSpec_KEGGProp_df))
+
+GenSpec_KEGGProp_df[which(GenSpec_KEGGProp_df$Info %in% c("Gen_MissingProp", "Gen_SingleProp", "Gen_MultipleProp")), "Classification"] = "Generalist"
+GenSpec_KEGGProp_df[which(GenSpec_KEGGProp_df$Info %in% c("Spec_MissingProp", "Spec_SingleProp", "Spec_MultipleProp")), "Classification"] = "Specialist"
+
+GenSpec_KEGGProp_df$Info = as.character(GenSpec_KEGGProp_df$Info)
+
+GenSpec_KEGGProp_df[which(GenSpec_KEGGProp_df$Info %in% c("Gen_MissingProp", "Std_MissingProp", "Spec_MissingProp")), "Info"] = "Missing"
+GenSpec_KEGGProp_df[which(GenSpec_KEGGProp_df$Info %in% c("Gen_SingleProp", "Std_SingleProp", "Spec_SingleProp")), "Info"] = "Single"
+GenSpec_KEGGProp_df[which(GenSpec_KEGGProp_df$Info %in% c("Gen_MultipleProp", "Std_MultipleProp", "Spec_MultipleProp")), "Info"] = "Multiple"
+
+
+a = ggplot(GenSpec_KEGGProp_df, aes(x = Info, y = Proportion, fill = Classification))
+a = a + geom_boxplot()
+a = a + xlab("KEGG Copies") + ylab("Proportion of Individuals")
+#a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+             panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), 
+             axis.line.x = element_line(color = "black"), 
+             axis.line.y = element_line(color = "black"),
+             axis.title = element_text(face = "bold"), 
+             legend.title = element_text(face = "bold"),
+             strip.background = element_rect(fill = "white"),
+             strip.text.y = element_text(face = "bold"),
+			 legend.position = "bottom"
+             )
+ggsave(paste("GenSpec_KEGGProp_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+GenSpec_KEGGProp_df2 = GenSpec_KEGGProp_df[-which(GenSpec_KEGGProp_df$Classification == "Standard"),]
+
+a = ggplot(GenSpec_KEGGProp_df2, aes(x = Info, y = Proportion, fill = Classification))
+a = a + geom_boxplot()
+a = a + xlab("KEGG Copies") + ylab("Proportion of Individuals")
+#a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+             panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), 
+             axis.line.x = element_line(color = "black"), 
+             axis.line.y = element_line(color = "black"),
+             axis.title = element_text(face = "bold"), 
+             legend.title = element_text(face = "bold"),
+             strip.background = element_rect(fill = "white"),
+             strip.text.y = element_text(face = "bold"),
+			 legend.position = "bottom"
+             )
+ggsave(paste("GenSpecOnly_KEGGProp_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+
+GenSpec_KEGGCount_df = melt(Count_GenSpecKEGG_df)
+colnames(GenSpec_KEGGCount_df) = c("KEGG", "Info", "Count")
+GenSpec_KEGGCount_df$Classification = rep("Standard", nrow(GenSpec_KEGGCount_df))
+
+GenSpec_KEGGCount_df[which(GenSpec_KEGGCount_df$Info %in% c("Gen_Missing", "Gen_Single", "Gen_Multiple")), "Classification"] = "Generalist"
+GenSpec_KEGGCount_df[which(GenSpec_KEGGCount_df$Info %in% c("Spec_Missing", "Spec_Single", "Spec_Multiple")), "Classification"] = "Specialist"
+
+GenSpec_KEGGCount_df$Info = as.character(GenSpec_KEGGCount_df$Info)
+
+GenSpec_KEGGCount_df[which(GenSpec_KEGGCount_df$Info %in% c("Gen_Missing", "Std_Missing", "Spec_Missing")), "Info"] = "Missing"
+GenSpec_KEGGCount_df[which(GenSpec_KEGGCount_df$Info %in% c("Gen_Single", "Std_Single", "Spec_Single")), "Info"] = "Single"
+GenSpec_KEGGCount_df[which(GenSpec_KEGGCount_df$Info %in% c("Gen_Multiple", "Std_Multiple", "Spec_Multiple")), "Info"] = "Multiple"
+
+GenSpec_KEGGCount_df2 = GenSpec_KEGGCount_df[-which(GenSpec_KEGGCount_df$Classification == "Standard"),]
+a = ggplot(GenSpec_KEGGCount_df2, aes(x = Info, y = Count, fill = Classification))
+a = a + geom_boxplot()
+a = a + xlab("KEGG Copies") + ylab("Count of Individuals")
+#a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+             panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), 
+             axis.line.x = element_line(color = "black"), 
+             axis.line.y = element_line(color = "black"),
+             axis.title = element_text(face = "bold"), 
+             legend.title = element_text(face = "bold"),
+             strip.background = element_rect(fill = "white"),
+             strip.text.y = element_text(face = "bold"),
+			 legend.position = "bottom"
+             )
+ggsave(paste("GenSpec_KEGGCount_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+###############################################################
+Y1000_KEGG_list = list()
+for(i in 1:length(Y1000_list)){
+	Y1000_KEGG_list[[i]] = list()
+	TEMP = Y1000_list[[i]]$KEGG
+	TEMPEC = merge(TEMP, KOECRnx_df, by.x = "V2", by.y = "KEGG")
+	Y1000_KEGG_list[[i]]$KEGG = unique(TEMPEC)
+}
+
+ReactionIn_df = EC_Reaction[,c(1,3,5:9)]
+ReactionOut_df = EC_Reaction[,c(1,3,11:17)]
+
+REACTIONS = unique(EC_Reaction$Reaction)
+EC_Reaction2 = EC_Reaction[,c(1:17)]
+
+
+### Generate an edgelist of reactions from the enzyme/reaction table###
+ReactionEdge_m = matrix(0, nrow = length(REACTIONS), ncol = length(REACTIONS))
+colnames(ReactionEdge_m) = REACTIONS
+rownames(ReactionEdge_m) = REACTIONS
+
+for(i in 1:length(REACTIONS)){
+	TEMPRNX = unique(EC_Reaction2[which(EC_Reaction2$Reaction == REACTIONS[[i]]),3:ncol(EC_Reaction2)])
+	for(j in 1:nrow(TEMPRNX)){
+		INPUT = unlist(as.list(TEMPRNX[j,3:7]))
+		INPUT = INPUT[which(is.na(INPUT) == FALSE)]
+		for(sub in 1:length(INPUT)){
+			CHECK1 = EC_Reaction2[which(EC_Reaction2$Out_1 %in% INPUT),"Reaction"]
+			CHECK2 = EC_Reaction2[which(EC_Reaction2$Out_2 %in% INPUT),"Reaction"]
+			CHECK3 = EC_Reaction2[which(EC_Reaction2$Out_3 %in% INPUT),"Reaction"]
+			CHECK4 = EC_Reaction2[which(EC_Reaction2$Out_4 %in% INPUT),"Reaction"]
+			CHECK5 = EC_Reaction2[which(EC_Reaction2$Out_5 %in% INPUT),"Reaction"]
+			CHECK6 = EC_Reaction2[which(EC_Reaction2$Out_6 %in% INPUT),"Reaction"]
+			CHECK7 = EC_Reaction2[which(EC_Reaction2$Out_7 %in% INPUT),"Reaction"]
+			CHECK_ALL = unique(c(CHECK1, CHECK2, CHECK3, CHECK4, CHECK5, CHECK6, CHECK7))
+			if(length(CHECK_ALL) > 0){
+				ReactionEdge_m[i,which(colnames(ReactionEdge_m) %in% CHECK_ALL)] = 1
+			}else{
+				ReactionEdge_m[i,i] = 1
+			}
+		}
+	}
+}
+
+write.csv(ReactionEdge_m, file = paste("AllReactionEdge_m", Sys.Date(), ".csv", sep = "_"))
+
+ReactionEdge_df = melt(ReactionEdge_m)
+colnames(ReactionEdge_df) = c("Reaction_A", "Reaction_B", "Interaction")
+ReactionEdge_df = ReactionEdge_df[which(ReactionEdge_df$Interaction == 1),]
+
+
+RNX = unique(KOECRnx_df$Reaction)
+
+ReactionEdge_df2 = ReactionEdge_df
+ReactionEdge_df2 = ReactionEdge_df2[,1:2]
+
+#Merge by Reaction A to KEGG/Enzyme Data
+ReactionEdge_df2 = merge(ReactionEdge_df2, KOECRnx_df, by.x = "Reaction_A", by.y = "Reaction")
+colnames(ReactionEdge_df2) = c("Reaction_A", "Reaction_B", "KEGG_A", "Enzyme_A")
+
+#Merge by Reaction B to KEGG/Enzyme Data
+ReactionEdge_df2 = merge(ReactionEdge_df2, KOECRnx_df, by.x = "Reaction_B", by.y = "Reaction")
+colnames(ReactionEdge_df2) = c("Reaction_B", "Reaction_A", "KEGG_A", "Enzyme_A", "KEGG_B", "Enzyme_B")
+
+save(list = ls(), file = paste("AllAnalyses", Sys.Date(), ".rda", sep = "_"))
+
+ReactionEdge_df2 = ReactionEdge_df2[,c(2,1,3:ncol(ReactionEdge_df2))]
+ReactionEdge_df2 = unique(ReactionEdge_df2)
+
+
+YEASTKEGG = unique(Y1000_KEGG_df$V2)
+
+Y1000_ReactionEdge_df = ReactionEdge_df2[which(ReactionEdge_df2$KEGG_A %in% YEASTKEGG),]
+Y1000_ReactionEdge_df = Y1000_ReactionEdge_df[which(Y1000_ReactionEdge_df$KEGG_B %in% YEASTKEGG),]
+Y1000_ReactionEdge_df = unique(Y1000_ReactionEdge_df)
+
+
+Y1000_Edge_list = list()
+for(i in 1:length(Y1000_list)){
+	Y1000_Edge_list[[i]] = list()
+	TEMPDATA = unique(Y1000_list[[i]]$KEGG)
+	TEMPKEGG = unique(TEMPDATA$V2)
+	TEMPEDGE = Y1000_ReactionEdge_df[which(Y1000_ReactionEdge_df$KEGG_A %in% TEMPKEGG & Y1000_ReactionEdge_df$KEGG_B %in% TEMPKEGG),]
+	Y1000_Edge_list[[i]]$KEGG = TEMPDATA
+	Y1000_Edge_list[[i]]$EdgeLists = TEMPEDGE
+}
+
+STRAINORDER = list()
+
+for(i in 1:length(Y1000_Edge_list)){
+	STRAINORDER[i] = unique(Y1000_Edge_list[[i]]$KEGG$PU)
+}
+
+STRAINORDER = unlist(STRAINORDER)
+
+
+
+names(Y1000_Edge_list) = STRAINORDER
+
+BackgroundKEGG = vector()
+for(i in 1:length(Y1000_Edge_list)){
+	BackgroundKEGG = unique(c(BackgroundKEGG, Y1000_Edge_list[[i]]$KEGG$V2))
+}
+BackgroundKEGG = unique(BackgroundKEGG)
+
+
+Y1000_NetworkGraphs = list()
+for(i in 1:length(Y1000_Edge_list)){
+	Y1000_NetworkGraphs[[i]] = list()
+	TEMPDATA = Y1000_Edge_list[[i]]$EdgeLists
+	TEMPRNXEDGE = unique(TEMPDATA[,c(1:2)])
+	TEMPKEGGEDGE = unique(TEMPDATA[,c(3,5)])
+		TEMPRNXGRAPH = graph.data.frame(unique(TEMPRNXEDGE), directed = FALSE)
+	TEMPKEGGGRAPH = graph.data.frame(unique(TEMPKEGGEDGE), directed = FALSE)
+	
+	 Y1000_NetworkGraphs[[i]]$ReactionNetwork = simplify(TEMPRNXGRAPH, remove.multiple = TRUE, remove.loops = TRUE, edge.attr.comb = igraph_opt("edge.attr.comb"))
+
+	 Y1000_NetworkGraphs[[i]]$KEGGNetwork = simplify(TEMPKEGGGRAPH, remove.multiple = TRUE, remove.loops = TRUE, edge.attr.comb = igraph_opt("edge.attr.comb"))
+}
+
+
+names(Y1000_NetworkGraphs) = STRAINORDER
+
+Y1000_Edge_Counts = data.frame(PU = character(),
+							Species = character(),
+							RnxEdgeCount = numeric(), 
+							KEGGEdgeCount = numeric(), stringsAsFactors = FALSE)
+							
+for(i in 1:length(Y1000_Edge_list)){
+	TEMP = unique( as_edgelist( Y1000_NetworkGraphs[[i]]$ReactionNetwork))
+	TEMP2 = unique( as_edgelist( Y1000_NetworkGraphs[[i]]$KEGGNetwork))
+	Y1000_Edge_Counts[i,1] = unique(Y1000_Edge_list[[i]]$KEGG$PU)
+	Y1000_Edge_Counts[i,2] = unique(Y1000_Edge_list[[i]]$KEGG$Species)
+	Y1000_Edge_Counts[i,3] = nrow(TEMP)
+	Y1000_Edge_Counts[i,4] = nrow(TEMP2)
+}
+
+Modularity_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Modularity = numeric(),
+							KEGG_Modularity = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_NetworkGraphs)){
+	TEMP = Y1000_NetworkGraphs[[i]]$ReactionNetwork
+	wcPos = walktrap.community(TEMP)
+	TEMP2 = Y1000_NetworkGraphs[[i]]$KEGGNetwork
+	wcPos2 = walktrap.community(TEMP2)
+	Modularity_df[k,1] = unique(Y1000_Edge_list[[i]]$KEGG$PU)
+	Modularity_df[k,2] = unique(Y1000_Edge_list[[i]]$KEGG$Species)
+	Modularity_df[k,3] = modularity(TEMP, membership(wcPos))
+	Modularity_df[k,4] = modularity(TEMP2, membership(wcPos2))
+	k = k+1
+}
+	
+
+Diameter_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Diameter = numeric(),
+							KEGG_Diameter = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_NetworkGraphs)){
+	TEMP = Y1000_NetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_NetworkGraphs[[i]]$KEGGNetwork
+	Diameter_df[k,1] = unique(Y1000_Edge_list[[i]]$KEGG$PU)
+	Diameter_df[k,2] = unique(Y1000_Edge_list[[i]]$KEGG$Species)
+	Diameter_df[k,3] = diameter(TEMP)
+	Diameter_df[k,4] =  diameter(TEMP2)
+	k = k+1
+}	
+ 
+Assortativity_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Assortativity = numeric(),
+							KEGG_Assortativity = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_NetworkGraphs)){
+	TEMP = Y1000_NetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_NetworkGraphs[[i]]$KEGGNetwork
+	Assortativity_df[k,1] = unique(Y1000_Edge_list[[i]]$KEGG$PU)
+	Assortativity_df[k,2] = unique(Y1000_Edge_list[[i]]$KEGG$Species)
+	Assortativity_df[k,3] = assortativity_degree(TEMP)
+	Assortativity_df[k,4] =  assortativity_degree(TEMP2)
+	k = k+1
+}	
+
+Betweenness_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Betweenness = numeric(),
+							KEGG_Betweenness = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_NetworkGraphs)){
+	TEMP = Y1000_NetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_NetworkGraphs[[i]]$KEGGNetwork
+	Betweenness_df[k,1] = unique(Y1000_Edge_list[[i]]$KEGG$PU)
+	Betweenness_df[k,2] = unique(Y1000_Edge_list[[i]]$KEGG$Species)
+	Betweenness_df[k,3] = mean(edge_betweenness(TEMP))
+	Betweenness_df[k,4] =  mean(edge_betweenness(TEMP2))
+	k = k+1
+}	
+
+Density_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Density = numeric(),
+							KEGG_Density = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_NetworkGraphs)){
+	TEMP = Y1000_NetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_NetworkGraphs[[i]]$KEGGNetwork
+	Density_df[k,1] = unique(Y1000_Edge_list[[i]]$KEGG$PU)
+	Density_df[k,2] = unique(Y1000_Edge_list[[i]]$KEGG$Species)
+	Density_df[k,3] = edge_density(TEMP)
+	Density_df[k,4] =  edge_density(TEMP2)
+	k = k+1
+}	
+
+
+Y1000_NetworkStats_df = cbind(Y1000_Edge_Counts, Modularity_df, Diameter_df, Assortativity_df, Betweenness_df, Density_df)
+Y1000_NetworkStats_df = Y1000_NetworkStats_df[,c(1:4,7:8,11:12, 15:16,19:20,23:24)]
+ 
+ write.csv(Y1000_NetworkStats_df, file = paste("Y1000_NetworkStats_df", Sys.Date(),".csv", sep = "_"))
+ 
+  
+ Y1000_Rnx_NetworkStats_df = Y1000_NetworkStats_df[,c(1,3,5,7,9,11,13)]
+ 
+ Condensed_Rnx_NetworkStats_df = melt(Y1000_Rnx_NetworkStats_df, measure.vars = c("RnxEdgeCount", "Rnx_Modularity", "Rnx_Diameter", "Rnx_Assortativity", "Rnx_Betweenness", "Rnx_Density"))
+ colnames(Condensed_Rnx_NetworkStats_df) = c("PU", "Statistic", "Value")
+ 
+ GENERALIST = GenSpec_Info[which(GenSpec_Info$Classification == "Generalist"), "Strain"]
+ 
+ SPECIALIST = GenSpec_Info[which(GenSpec_Info$Classification == "Specialist"), "Strain"]
+ 
+ Condensed_Rnx_NetworkStats_df$Classification = rep("Normal", nrow(Condensed_Rnx_NetworkStats_df))
+ Condensed_Rnx_NetworkStats_df[which(Condensed_Rnx_NetworkStats_df$PU %in% GENERALIST), "Classification"] = "Generalist"
+ Condensed_Rnx_NetworkStats_df[which(Condensed_Rnx_NetworkStats_df$PU %in% SPECIALIST), "Classification"] = "Specialist"
+ 
+ write.csv(Condensed_Rnx_NetworkStats_df, file = paste("Condensed_Rnx_NetworkStats_df", Sys.Date(),".csv", sep = "_"))
+ 
+ GenSpec_Rnx_NetworkStats_df=Condensed_Rnx_NetworkStats_df[which(Condensed_Rnx_NetworkStats_df$PU %in% PhenotypedStrains),]
+ 
+ write.csv(GenSpec_Rnx_NetworkStats_df, file = paste("GenSpec_Rnx_NetworkStats_df", Sys.Date(),".csv", sep = "_"))
+ 
+ 
+a = ggplot(GenSpec_Rnx_NetworkStats_df, aes(x = Classification, y = Value, group = Classification, fill = Classification))
+a = a + geom_boxplot()
+a = a + facet_wrap(.~ Statistic, scales = "free")
+a = a + xlab("Classification") + ylab("Statistic")
+a = a + scale_y_continuous(expand = c(0, 0))
+a = a + theme(panel.grid.major = element_blank(), 
+             panel.grid.minor = element_blank(), 
+             panel.background = element_blank(), 
+             axis.line.x = element_line(color = "black"), 
+             axis.line.y = element_line(color = "black"),
+			 axis.text.x = element_blank(),
+             axis.title = element_text(face = "bold"), 
+             legend.title = element_text(face = "bold"),
+             strip.background = element_rect(fill = "white"),
+             strip.text.y = element_text(face = "bold"),
+			 legend.position = "bottom"
+             )
+ggsave(paste("GenSpec_RnxStat_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+
+Y1000_KEGG_NetworkStats_df = Y1000_NetworkStats_df[,c(1,4,6,8,10,12,14)]
+Y1000_KEGG_NetworkStats_df = Y1000_KEGG_NetworkStats_df[which(is.na(Y1000_KEGG_NetworkStats_df$PU) == FALSE),]
+
+Condensed_KEGG_NetworkStats_df = melt(Y1000_KEGG_NetworkStats_df, measure.vars = c("KEGGEdgeCount", "KEGG_Modularity", "KEGG_Diameter", "KEGG_Assortativity", "KEGG_Betweenness", "KEGG_Density"))
+ colnames(Condensed_KEGG_NetworkStats_df) = c("PU", "Statistic", "Value")
+ 
+ Condensed_KEGG_NetworkStats_df$Classification = rep("Normal", nrow(Condensed_KEGG_NetworkStats_df))
+ Condensed_KEGG_NetworkStats_df[which(Condensed_KEGG_NetworkStats_df$PU %in% GENERALIST), "Classification"] = "Generalist"
+ Condensed_KEGG_NetworkStats_df[which(Condensed_KEGG_NetworkStats_df$PU %in% SPECIALIST), "Classification"] = "Specialist"
+ 
+ GenSpec_KEGG_NetworkStats_df=Condensed_KEGG_NetworkStats_df[which(Condensed_KEGG_NetworkStats_df$PU %in% PhenotypedStrains),]
+ 
+ write.csv(GenSpec_KEGG_NetworkStats_df, file = paste("GenSpec_KEGG_NetworkStats_df", Sys.Date(),".csv", sep = "_"))
+ 
+ 
+ a = ggplot(Condensed_KEGG_NetworkStats_df, aes(x = Classification, y = Value, group = Classification, fill = Classification))
+ a = a + geom_boxplot()
+ a = a + facet_wrap(.~ Statistic, scales = "free")
+ a = a + xlab("Classification") + ylab("Statistic")
+ a = a + scale_y_continuous(expand = c(0, 0))
+ a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_blank(),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold"),
+			  legend.position = "bottom"
+              )
+ggsave(paste("GenSpec_KEGGStat_boxplot", Sys.Date(),".pdf", sep = "_"))
+
+#############################################
+### Specialist Generalized Network ##########
+
+SPECIALISTS = GenSpec_df[which(GenSpec_df$Classification == "Specialist"), "Strain"]
+
+SPECSTR_ORDER = which(STRAINORDER %in% SPECIALIST)
+SPECIALISTS = STRAINORDER[SPECSTR_ORDER]
+
+Specialists_Edge = Y1000_Edge_list[SPECSTR_ORDER]
+
+Specialist_Edge_df = data.frame()
+for(i in 1:length(Specialists_Edge)){
+	Specialist_Edge_df = unique(rbind(Specialist_Edge_df, Specialists_Edge[[i]]$EdgeLists))
+}
+
+write.csv(Specialist_Edge_df, file = paste("Specialist_Edge_df_", Sys.Date(),".csv", sep = ""))
+ 
+SpecialistReaction_Edge = unique(Specialist_Edge_df[,c(1:2)])
+SpecialistKEGG_Edge = unique(Specialist_Edge_df[,c(3,5)])
+
+REACTION = unique(c(as.character(SpecialistReaction_Edge$Reaction_A), as.character(SpecialistReaction_Edge$Reaction_B)))
+
+SpecialistRnx_m = matrix(0, nrow = length(REACTION), ncol = length(SPECIALISTS))
+rownames(SpecialistRnx_m) = REACTION
+colnames(SpecialistRnx_m) = SPECIALISTS
+
+for(i in 1:length(REACTION)){
+	TEMPLIST = list()
+	for(j in 1:length(SPECIALISTS)){
+		TEMPLIST[[j]] = list()
+		TEMP = unique(c(as.character(unique(Specialists_Edge[[j]]$EdgeList[,1])), as.character(unique(Specialists_Edge[[j]]$EdgeList[,2]))))
+		TEMPLIST[[j]] = length(which(TEMP %in% REACTION[[i]]))
+	}
+	SpecialistRnx_m[i,] = unlist(TEMPLIST)
+	print(i)
+}
+
+write.csv(SpecialistRnx_m, file = paste("SpecialistRnx_m_", Sys.Date(),".csv", sep = ""))
+
+RnxSpecCount_df = data.frame(Reactions = rownames(SpecialistRnx_m), Specialist_Count = rowSums(SpecialistRnx_m))
+RnxSpecCount_df$Proportion = RnxSpecCount_df$Specialist_Count/length(SPECIALISTS)
+
+
+write.csv(RnxSpecCount_df, file = paste("RnxSpecCount_df_", Sys.Date(),".csv", sep = ""))
+
+KEGG = unique(c(as.character(SpecialistKEGG_Edge$KEGG_A, SpecialistKEGG_Edge$KEGG_B)))
+
+SpecialistKEGG_m = matrix(0, nrow = length(KEGG), ncol = length(SPECIALISTS))
+rownames(SpecialistKEGG_m) = KEGG
+colnames(SpecialistKEGG_m) = SPECIALISTS
+
+for(i in 1:length(KEGG)){
+	TEMPLIST = list()
+	for(j in 1:length(SPECIALISTS)){
+		TEMPLIST[[j]] = list()
+		TEMP = unique(c(as.character(unique(Specialists_Edge[[j]]$EdgeList[,3])), as.character(unique(Specialists_Edge[[j]]$EdgeList[,5]))))
+		TEMPLIST[[j]] = length(which(TEMP %in% KEGG[[i]]))
+	}
+	SpecialistKEGG_m[i,] = unlist(TEMPLIST)
+	print(i)
+}
+
+write.csv(SpecialistKEGG_m, file = paste("SpecialistKEGG_m_", Sys.Date(),".csv", sep = ""))
+
+KEGGSpecCount_df = data.frame(KEGG = rownames(SpecialistKEGG_m), Specialist_Count = rowSums(SpecialistKEGG_m))
+KEGGSpecCount_df$Proportion = KEGGSpecCount_df$Specialist_Count/length(SPECIALISTS)
+
+write.csv(KEGGSpecCount_df, file = paste("KEGGSpecCount_df_", Sys.Date(),".csv", sep = ""))
+
+#### Generalist Matrix
+GENERALISTS = GenSpec_df[which(GenSpec_df$Classification == "Generalist"), "Strain"]
+
+SPECSTR_ORDER = which(STRAINORDER %in% GENERALIST)
+GENERALISTS = STRAINORDER[SPECSTR_ORDER]
+
+Generalists_Edge = Y1000_Edge_list[SPECSTR_ORDER]
+
+Generalist_Edge_df = data.frame()
+for(i in 1:length(Generalists_Edge)){
+	Generalist_Edge_df = unique(rbind(Generalist_Edge_df, Generalists_Edge[[i]]$EdgeLists))
+}
+
+write.csv(Generalist_Edge_df, file = paste("Generalist_Edge_df_", Sys.Date(),".csv", sep = ""))
+
+GeneralistReaction_Edge = unique(Generalist_Edge_df[,c(1:2)])
+GeneralistKEGG_Edge = unique(Generalist_Edge_df[,c(3,5)])
+
+REACTION = unique(c(as.character(GeneralistReaction_Edge$Reaction_A), as.character(GeneralistReaction_Edge$Reaction_B)))
+
+GeneralistRnx_m = matrix(0, nrow = length(REACTION), ncol = length(GENERALISTS))
+rownames(GeneralistRnx_m) = REACTION
+colnames(GeneralistRnx_m) = GENERALISTS
+
+for(i in 1:length(REACTION)){
+	TEMPLIST = list()
+	for(j in 1:length(GENERALISTS)){
+		TEMPLIST[[j]] = list()
+		TEMP = unique(c(as.character(unique(Generalists_Edge[[j]]$EdgeList[,1])), as.character(unique(Generalists_Edge[[j]]$EdgeList[,2]))))
+		TEMPLIST[[j]] = length(which(TEMP %in% REACTION[[i]]))
+	}
+	GeneralistRnx_m[i,] = unlist(TEMPLIST)
+	print(i)
+}
+
+write.csv(GeneralistRnx_m, file = paste("GeneralistRnx_m_", Sys.Date(),".csv", sep = ""))
+
+RnxGenCount_df = data.frame(Reactions = rownames(GeneralistRnx_m), Generalist_Count = rowSums(GeneralistRnx_m))
+RnxGenCount_df$Proportion = RnxGenCount_df$Generalist_Count/length(GENERALISTS)
+
+write.csv(RnxGenCount_df, file = paste("RnxGenCount_df_", Sys.Date(),".csv", sep = ""))
+
+
+KEGG = unique(c(GeneralistKEGG_Edge$KEGG_A, GeneralistKEGG_Edge$KEGG_B))
+
+GeneralistKEGG_m = matrix(0, nrow = length(KEGG), ncol = length(GENERALISTS))
+rownames(GeneralistKEGG_m) = KEGG
+colnames(GeneralistKEGG_m) = GENERALISTS
+
+for(i in 1:length(KEGG)){
+	TEMPLIST = list()
+	for(j in 1:length(GENERALISTS)){
+		TEMPLIST[[j]] = list()
+		TEMP = unique(c(as.character(unique(Generalists_Edge[[j]]$EdgeList[,3])), as.character(unique(Generalists_Edge[[j]]$EdgeList[,5]))))
+		TEMPLIST[[j]] = length(which(TEMP %in% KEGG[[i]]))
+	}
+	GeneralistKEGG_m[i,] = unlist(TEMPLIST)
+	print(i)
+}
+write.csv(GeneralistKEGG_m, file = paste("GeneralistKEGG_m_", Sys.Date(),".csv", sep = ""))
+
+GeneralistKEGG_m2 = t(GeneralistKEGG_m)
+
+	
+BinarySugar = unique(Sugar_m[,c(1,4:21)])
+PUKEEP = BinarySugar$PU
+BinarySugar = BinarySugar[,c(2:19)]
+BinarySugar$Glucose = as.numeric(as.character(BinarySugar$Glucose))
+BinarySugar[BinarySugar > 0] <- 1
+rownames(BinarySugar) = PUKEEP
+
+
+KEGGGenCount_df = data.frame(KEGG = rownames(GeneralistKEGG_m), Generalist_Count = rowSums(GeneralistKEGG_m))
+KEGGGenCount_df$Proportion = KEGGGenCount_df$Generalist_Count/length(GENERALISTS)
+
+write.csv(KEGGGenCount_df, file = paste("KEGGGenCount_df_", Sys.Date(),".csv", sep = ""))
+
+MissingRnx_Generalist = unique(RnxSpecCount_df[-which(RnxSpecCount_df$Reactions %in% RnxGenCount_df$Reactions),"Reactions"])
+write.csv(MissingRnx_Generalist, file = paste("MissingRnx_Generalist_", Sys.Date(),".csv", sep = ""))
+
+MissingRnx_Specialist = unique(RnxGenCount_df[-which(RnxGenCount_df$Reactions %in% RnxSpecCount_df$Reactions),"Reactions"])
+write.csv(MissingRnx_Specialist, file = paste("MissingRnx_Specialist_", Sys.Date(),".csv", sep = ""))
+
+MissingKEGG_Generalist = unique(KEGGSpecCount_df[-which(KEGGSpecCount_df$KEGG %in% KEGGGenCount_df$KEGG),"KEGG"])
+write.csv(MissingKEGG_Generalist, file = paste("MissingKEGG_Generalist_", Sys.Date(),".csv", sep = ""))
+
+MissingKEGG_Specialist = unique(KEGGGenCount_df[-which(KEGGGenCount_df$KEGG %in% KEGGSpecCount_df$KEGG),"KEGG"])
+write.csv(MissingKEGG_Specialist, file = paste("MissingKEGG_Specialist_", Sys.Date(),".csv", sep = ""))
+
+#Generalist KEGG Network 
+
+
+NotVariable_All = unique(c(NotVariable, GenSpec_NotVariable))
+
+KEGGGenCount_df2 = KEGGGenCount_df[-which(KEGGGenCount_df$KEGG %in% NotVariable_All),]
+
+GeneralistKEGG_Edge2 = GeneralistKEGG_Edge[-which(GeneralistKEGG_Edge$KEGG_A %in% NotVariable_All | GeneralistKEGG_Edge$KEGG_B %in% NotVariable_All), ] 
+
+#Generalist KEGG Network 
+Gen_g = graph.data.frame(GeneralistKEGG_Edge, directed = FALSE)
+Gen_g = simplify(Gen_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+Gen_c1 = cluster_louvain(Gen_g)
+#c1 = cluster_fast_greedy(g)
+
+GenmembershipCount_df = data.frame(membership = numeric(),
+							Count = numeric()
+							)
+
+for(i in 1:max(membership(Gen_c1))){
+	GenmembershipCount_df[i,1] = i
+	GenmembershipCount_df[i,2] = length(which(membership(Gen_c1) == i))
+}
+
+
+GenMembershipVector = membership(Gen_c1)
+MEMBERSHIP = unique(GenmembershipCount_df$membership)
+GenMembership_list = list()
+for(i in 1:length(MEMBERSHIP)){
+	GenMembership_list[[i]] = list()
+	GenMembership_list[[i]]$Members = names(GenMembershipVector)[which(GenMembershipVector == MEMBERSHIP[[i]])]
+}
+
+Simplified_GenEdge = data.frame( get.edgelist(Gen_g))
+colnames(Simplified_GenEdge) = c("KEGG_A", "KEGG_B")
+
+
+names(GenMembership_list) = MEMBERSHIP
+
+
+
+GenMember_m = matrix(0, nrow = length(MEMBERSHIP), ncol = length(MEMBERSHIP))
+colnames(GenMember_m) = MEMBERSHIP
+rownames(GenMember_m) = MEMBERSHIP
+
+for(i in 1:(length(GenMembership_list))){
+	for(j in 1:length(GenMembership_list)){
+		TEMPA = GenMembership_list[[i]]$Members
+		TEMPB = GenMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(Simplified_GenEdge$KEGG_A %in% TEMPA & Simplified_GenEdge$KEGG_B %in% TEMPB | Simplified_GenEdge$KEGG_A %in% TEMPB & Simplified_GenEdge$KEGG_B %in% TEMPA))
+		GenMember_m[i,j] = TEMPCOUNT
+	}
+}
+
+diag(GenMember_m) <- NA
+
+GenMemSums_vector = rowSums(GenMember_m, na.rm = TRUE)
+GenMemSums_df = data.frame(Members = names(GenMemSums_vector), Count = GenMemSums_vector)
+
+
+GenMembership_Edge = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(GenMembership_list)-1)){
+	for(j in (i+1):length(GenMembership_list)){
+		TEMPA = GenMembership_list[[i]]$Members
+		TEMPB = GenMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(Simplified_GenEdge$KEGG_A %in% TEMPA & Simplified_GenEdge$KEGG_B %in% TEMPB | Simplified_GenEdge$KEGG_A %in% TEMPB & Simplified_GenEdge$KEGG_B %in% TEMPA))
+		GenMembership_Edge[k,1] = i
+		GenMembership_Edge[k,2] = j
+		GenMembership_Edge[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+GenMembership_Edge = GenMembership_Edge[which(GenMembership_Edge$Count > 0), ]
+
+NoAttach = GenMemSums_df[which(GenMemSums_df$Count == 0), "Members"]
+
+k = nrow(GenMembership_Edge) + 1
+for(i in 1:length(NoAttach)){
+	GenMembership_Edge[k,1] = NoAttach[[i]]
+	GenMembership_Edge[k,2] = NoAttach[[i]]
+	GenMembership_Edge[k,3] = 1
+	k = k + 1
+}
+
+MEMBERKEEP = unique(c(GenMembership_Edge$Edge_A, GenMembership_Edge$Edge_B))
+GenmembershipCount_df2 = GenmembershipCount_df[which(GenmembershipCount_df$membership %in% MEMBERKEEP),]
+
+GenMembershipInfo = GenmembershipCount_df2
+
+GenMembershipInfo$Size = rep(0, nrow(GenMembershipInfo))
+GenMembershipInfo$Size = ((GenMembershipInfo$Count)/10)
+GenMembershipInfo[which(GenMembershipInfo$Size < 1), "Size"] = 1
+
+GenMembership_Edge$VWidth = rep(0, nrow(GenMembership_Edge))
+GenMembership_Edge[which(GenMembership_Edge$Count < 10), "VWidth"] = GenMembership_Edge[which(GenMembership_Edge$Count < 10), "Count"]
+GenMembership_Edge[which(GenMembership_Edge$Count >= 100 & GenMembership_Edge$Count < 1000), "VWidth"] = 7.5
+GenMembership_Edge[which(GenMembership_Edge$Count >= 10 & GenMembership_Edge$Count < 100), "VWidth"] = 5
+GenMembership_Edge[which(GenMembership_Edge$Count >= 1000), "VWidth"] = 10
+
+GenCommedgeWidth = GenMembership_Edge$VWidth
+
+
+GenComm_g = graph.data.frame(GenMembership_Edge, directed = FALSE, vertices = GenMembershipInfo)
+GenComm_g = simplify(GenComm_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(GenComm_g))
+maxC = rep(Inf, vcount(GenComm_g))
+minC[1] <- maxC[1] <- 0
+
+GenComm_co = layout_with_fr(GenComm_g, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+GenComm_co = layout_with_kk(GenComm_g)
+
+
+GenComm_NodeSize = (V(GenComm_g)$Size + 25)
+GenComm_c1 = cluster_louvain(GenComm_g, weights = GenComm_g$Count)
+#GenComm_c1 = cluster_fast_greedy(GenComm_g)
+
+pdf(paste("Generalist_Community_Network_", Sys.Date(), ".pdf", sep = ""), height = 20, width = 20, useDingbats = FALSE)
+	plot(GenComm_c1, GenComm_g, 
+		layout=GenComm_co, 
+		col = membership(GenComm_c1),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(GenComm_co[,1]), 
+		ylim=range(GenComm_co[,2]),
+		vertex.label.color = "black", 
+		vertex.size = GenComm_NodeSize,
+		vertex.label.cex = 1,
+		edge.width = GenCommedgeWidth
+	)
+
+dev.off()
+
+GenMembership_Edge2 = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(GenMembership_list)-1)){
+	for(j in (i+1):length(GenMembership_list)){
+		TEMPA = GenMembership_list[[i]]$Members
+		TEMPB = GenMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(Simplified_GenEdge$KEGG_A %in% TEMPA & Simplified_GenEdge$KEGG_B %in% TEMPB | Simplified_GenEdge$KEGG_A %in% TEMPB & Simplified_GenEdge$KEGG_B %in% TEMPA))
+		GenMembership_Edge2[k,1] = i
+		GenMembership_Edge2[k,2] = j
+		GenMembership_Edge2[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+GenMembership_Edge2 = GenMembership_Edge2[which(GenMembership_Edge2$Count > 0), ]
+
+MEMBERKEEP2 = unique(c(GenMembership_Edge2$Edge_A, GenMembership_Edge2$Edge_B))
+GenmembershipCount_df3 = GenmembershipCount_df[which(GenmembershipCount_df$membership %in% MEMBERKEEP2),]
+
+GenMembershipInfo2 = GenmembershipCount_df3
+
+GenMembershipInfo2$Size = rep(0, nrow(GenMembershipInfo2))
+GenMembershipInfo2$Size = ((GenMembershipInfo2$Count)/10)
+GenMembershipInfo2[which(GenMembershipInfo2$Size < 1), "Size"] = 1
+
+GenMembership_Edge2$VWidth = rep(0, nrow(GenMembership_Edge2))
+GenMembership_Edge2[which(GenMembership_Edge2$Count < 10), "VWidth"] = GenMembership_Edge2[which(GenMembership_Edge2$Count < 10), "Count"]
+GenMembership_Edge2[which(GenMembership_Edge2$Count >= 100 & GenMembership_Edge2$Count < 1000), "VWidth"] = 7.5
+GenMembership_Edge2[which(GenMembership_Edge2$Count >= 10 & GenMembership_Edge2$Count < 100), "VWidth"] = 5
+GenMembership_Edge2[which(GenMembership_Edge2$Count >= 1000), "VWidth"] = 10
+
+
+GenCommedgeWidth2 = GenMembership_Edge2$VWidth
+
+
+GenComm_g2 = graph.data.frame(GenMembership_Edge2, directed = FALSE, vertices = GenMembershipInfo2)
+GenComm_g2 = simplify(GenComm_g2,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(GenComm_g2))
+maxC = rep(Inf, vcount(GenComm_g2))
+minC[1] <- maxC[1] <- 0
+
+GenComm_co2 = layout_with_fr(GenComm_g2, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+#GenComm_co2 = layout_with_kk(GenComm_g2)
+
+
+GenComm_NodeSize2 = (V(GenComm_g2)$Size + 10)
+GenComm_c12 = cluster_louvain(GenComm_g2, weights = GenComm_g2$Count)
+#GenComm_c1 = cluster_fast_greedy(GenComm_g)
+
+pdf(paste("Generalist_Community_Network2_", Sys.Date(), ".pdf", sep = ""), useDingbats = FALSE)
+	plot(GenComm_c12, GenComm_g2, 
+		layout=GenComm_co2, 
+		col = membership(GenComm_c12),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(GenComm_co2[,1]), 
+		ylim=range(GenComm_co2[,2]),
+		vertex.label.color = "black", 
+		vertex.size = GenComm_NodeSize2,
+		vertex.label.cex = 1,
+		edge.width = GenCommedgeWidth2
+	)
+
+dev.off()
+
+
+write.csv(capture.output(GenMembership_list[MEMBERKEEP2]), file = paste("GeneralistConnectedCommunities_", Sys.Date(), ".csv", sep = ""))
+
+
+GeneralistCommunity_KEGG = data.frame(Community = numeric(), KEGG = character(), stringsAsFactors = FALSE)
+k = 1
+for(i in 1:length(MEMBERKEEP2)){
+	TEMP =  GenMembership_list[MEMBERKEEP2[[i]]][[1]]$Members
+	for(j in 1:length(TEMP)){
+		GeneralistCommunity_KEGG[k, 1] = MEMBERKEEP2[[i]]
+		GeneralistCommunity_KEGG[k, 2] = TEMP[[j]]
+		k = k+1
+	}
+}
+
+write.csv(GeneralistCommunity_KEGG, file = paste("GeneralistCommunity_KEGG_", Sys.Date(),".csv", sep = ""))
+
+#Specialist KEGG Network 
+Spec_g = graph.data.frame(SpecialistKEGG_Edge, directed = FALSE)
+Spec_g = simplify(Spec_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+Spec_c1 = cluster_louvain(Spec_g)
+#c1 = cluster_fast_greedy(g)
+
+SpecmembershipCount_df = data.frame(membership = numeric(),
+							Count = numeric()
+							)
+
+for(i in 1:max(membership(Spec_c1))){
+	SpecmembershipCount_df[i,1] = i
+	SpecmembershipCount_df[i,2] = length(which(membership(Spec_c1) == i))
+}
+
+
+SpecMembershipVector = membership(Spec_c1)
+MEMBERSHIP = unique(SpecmembershipCount_df$membership)
+SpecMembership_list = list()
+for(i in 1:length(MEMBERSHIP)){
+	SpecMembership_list[[i]] = list()
+	SpecMembership_list[[i]]$Members = names(SpecMembershipVector)[which(SpecMembershipVector == MEMBERSHIP[[i]])]
+}
+
+Simplified_SpecEdge = data.frame( get.edgelist(Spec_g))
+colnames(Simplified_SpecEdge) = c("KEGG_A", "KEGG_B")
+
+
+names(SpecMembership_list) = MEMBERSHIP
+
+SpecMember_m = matrix(0, nrow = length(MEMBERSHIP), ncol = length(MEMBERSHIP))
+colnames(SpecMember_m) = MEMBERSHIP
+rownames(SpecMember_m) = MEMBERSHIP
+
+for(i in 1:(length(SpecMembership_list))){
+	for(j in 1:length(SpecMembership_list)){
+		TEMPA = SpecMembership_list[[i]]$Members
+		TEMPB = SpecMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(Simplified_SpecEdge$KEGG_A %in% TEMPA & Simplified_SpecEdge$KEGG_B %in% TEMPB | Simplified_SpecEdge$KEGG_A %in% TEMPB & Simplified_SpecEdge$KEGG_B %in% TEMPA))
+		SpecMember_m[i,j] = TEMPCOUNT
+	}
+}
+
+diag(SpecMember_m) <- NA
+
+SpecMemSums_vector = rowSums(SpecMember_m, na.rm = TRUE)
+SpecMemSums_df = data.frame(Members = names(SpecMemSums_vector), Count = SpecMemSums_vector)
+
+
+SpecMembership_Edge = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(SpecMembership_list)-1)){
+	for(j in (i+1):length(SpecMembership_list)){
+		TEMPA = SpecMembership_list[[i]]$Members
+		TEMPB = SpecMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(Simplified_SpecEdge$KEGG_A %in% TEMPA & Simplified_SpecEdge$KEGG_B %in% TEMPB | Simplified_SpecEdge$KEGG_A %in% TEMPB & Simplified_SpecEdge$KEGG_B %in% TEMPA))
+		SpecMembership_Edge[k,1] = i
+		SpecMembership_Edge[k,2] = j
+		SpecMembership_Edge[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+SpecMembership_Edge = SpecMembership_Edge[which(SpecMembership_Edge$Count > 0), ]
+
+NoAttach = SpecMemSums_df[which(SpecMemSums_df$Count == 0), "Members"]
+
+k = nrow(SpecMembership_Edge) + 1
+for(i in 1:length(NoAttach)){
+	SpecMembership_Edge[k,1] = NoAttach[[i]]
+	SpecMembership_Edge[k,2] = NoAttach[[i]]
+	SpecMembership_Edge[k,3] = 1
+	k = k + 1
+}
+
+MEMBERKEEP = unique(c(SpecMembership_Edge$Edge_A, SpecMembership_Edge$Edge_B))
+SpecmembershipCount_df2 = SpecmembershipCount_df[which(SpecmembershipCount_df$membership %in% MEMBERKEEP),]
+
+SpecMembershipInfo = SpecmembershipCount_df2
+
+SpecMembershipInfo$Size = rep(0, nrow(SpecMembershipInfo))
+SpecMembershipInfo$Size = ((SpecMembershipInfo$Count)/10)
+SpecMembershipInfo[which(SpecMembershipInfo$Size < 1), "Size"] = 1
+
+SpecMembership_Edge$VWidth = rep(0, nrow(SpecMembership_Edge))
+
+SpecMembership_Edge[which(SpecMembership_Edge$Count < 10), "VWidth"] = SpecMembership_Edge[which(SpecMembership_Edge$Count < 10), "Count"]
+
+SpecMembership_Edge[which(SpecMembership_Edge$Count >= 100 & SpecMembership_Edge$Count < 1000), "VWidth"] = 7.5
+
+SpecMembership_Edge[which(SpecMembership_Edge$Count >= 10 & SpecMembership_Edge$Count < 100), "VWidth"] = 5
+
+SpecMembership_Edge[which(SpecMembership_Edge$Count >= 1000), "VWidth"] = 10
+
+
+SpecCommedgeWidth = SpecMembership_Edge$VWidth
+
+
+SpecComm_g = graph.data.frame(SpecMembership_Edge, directed = FALSE, vertices = SpecMembershipInfo)
+SpecComm_g = simplify(SpecComm_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(SpecComm_g))
+maxC = rep(Inf, vcount(SpecComm_g))
+minC[1] <- maxC[1] <- 0
+
+SpecComm_co = layout_with_fr(SpecComm_g, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+SpecComm_co = layout_with_kk(SpecComm_g)
+
+
+SpecComm_NodeSize = (V(SpecComm_g)$Size + 25)
+SpecComm_c1 = cluster_louvain(SpecComm_g, weights = SpecComm_g$Count)
+#SpecComm_c1 = cluster_fast_greedy(SpecComm_g)
+
+pdf(paste("Specialist_Community_Network_", Sys.Date(), ".pdf", sep = ""), height = 20, width = 20, useDingbats = FALSE)
+	plot(SpecComm_c1, SpecComm_g, 
+		layout=SpecComm_co, 
+		col = membership(SpecComm_c1),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(SpecComm_co[,1]), 
+		ylim=range(SpecComm_co[,2]),
+		vertex.label.color = "black", 
+		vertex.size = SpecComm_NodeSize,
+		vertex.label.cex = 1,
+		edge.width = SpecCommedgeWidth
+	)
+
+dev.off()
+
+SpecMembership_Edge2 = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(SpecMembership_list)-1)){
+	for(j in (i+1):length(SpecMembership_list)){
+		TEMPA = SpecMembership_list[[i]]$Members
+		TEMPB = SpecMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(Simplified_SpecEdge$KEGG_A %in% TEMPA & Simplified_SpecEdge$KEGG_B %in% TEMPB | Simplified_SpecEdge$KEGG_A %in% TEMPB & Simplified_SpecEdge$KEGG_B %in% TEMPA))
+		SpecMembership_Edge2[k,1] = i
+		SpecMembership_Edge2[k,2] = j
+		SpecMembership_Edge2[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+SpecMembership_Edge2 = SpecMembership_Edge2[which(SpecMembership_Edge2$Count > 0), ]
+
+MEMBERKEEP2 = unique(c(SpecMembership_Edge2$Edge_A, SpecMembership_Edge2$Edge_B))
+SpecmembershipCount_df3 = SpecmembershipCount_df[which(SpecmembershipCount_df$membership %in% MEMBERKEEP2),]
+
+SpecMembershipInfo2 = SpecmembershipCount_df3
+
+SpecMembershipInfo2$Size = rep(0, nrow(SpecMembershipInfo2))
+SpecMembershipInfo2$Size = ((SpecMembershipInfo2$Count)/10)
+SpecMembershipInfo2[which(SpecMembershipInfo2$Size < 1), "Size"] = 1
+
+SpecMembership_Edge2$VWidth = rep(0, nrow(SpecMembership_Edge2))
+SpecMembership_Edge2[which(SpecMembership_Edge2$Count < 10), "VWidth"] = SpecMembership_Edge2[which(SpecMembership_Edge2$Count < 10), "Count"]
+SpecMembership_Edge2[which(SpecMembership_Edge2$Count >= 100 & SpecMembership_Edge2$Count < 1000), "VWidth"] = 7.5
+SpecMembership_Edge2[which(SpecMembership_Edge2$Count >= 10 & SpecMembership_Edge2$Count < 100), "VWidth"] = 5
+SpecMembership_Edge2[which(SpecMembership_Edge2$Count >= 1000), "VWidth"] = 10
+
+
+SpecCommedgeWidth2 = SpecMembership_Edge2$VWidth
+
+
+SpecComm_g2 = graph.data.frame(SpecMembership_Edge2, directed = FALSE, vertices = SpecMembershipInfo2)
+SpecComm_g2 = simplify(SpecComm_g2,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(SpecComm_g2))
+maxC = rep(Inf, vcount(SpecComm_g2))
+minC[1] <- maxC[1] <- 0
+
+SpecComm_co2 = layout_with_fr(SpecComm_g2, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+#SpecComm_co2 = layout_with_kk(SpecComm_g2)
+
+
+SpecComm_NodeSize2 = (V(SpecComm_g2)$Size + 10)
+SpecComm_c12 = cluster_louvain(SpecComm_g2, weights = Count)
+#SpecComm_c1 = cluster_fast_greedy(SpecComm_g)
+
+pdf(paste("Specialist_Community_Network2_", Sys.Date(), ".pdf", sep = ""), useDingbats = FALSE)
+	plot(SpecComm_c12, SpecComm_g2, 
+		layout=SpecComm_co2, 
+		col = membership(SpecComm_c12),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(SpecComm_co2[,1]), 
+		ylim=range(SpecComm_co2[,2]),
+		vertex.label.color = "black", 
+		vertex.size = SpecComm_NodeSize2,
+		vertex.label.cex = 1,
+		edge.width = SpecCommedgeWidth2
+	)
+
+dev.off()
+
+MEMBERKEEP2 = unique(c(SpecMembership_Edge2$Edge_A, SpecMembership_Edge2$Edge_B))
+
+SpecialistCommunity_KEGG = data.frame(Community = numeric(), KEGG = character(), stringsAsFactors = FALSE)
+k = 1
+for(i in 1:length(MEMBERKEEP2)){
+	TEMP =  SpecMembership_list[MEMBERKEEP2[[i]]][[1]]$Members
+	for(j in 1:length(TEMP)){
+		SpecialistCommunity_KEGG[k, 1] = MEMBERKEEP2[[i]]
+		SpecialistCommunity_KEGG[k, 2] = TEMP[[j]]
+		k = k+1
+	}
+}
+
+write.csv(SpecialistCommunity_KEGG, file = paste("SpecialistCommunity_KEGG_", Sys.Date(),".csv", sep = ""))
+
+############ Removal of Core Metabolic genes #############
+
+KEGGAnnot_m = KEGGAnnot_m[, which(colnames(KEGGAnnot_m) %in% PhenotypedStrains)]
+KEGGAnnot_m[which(KEGGAnnot_m > 0)] = 1
+write.csv(KEGGAnnot_m, file = paste("KEGGAnnot_Binary_", Sys.Date(), ".csv", sep = ""))
+
+KEGGAnnot_Count = rowSums(KEGGAnnot_m, na.rm = TRUE)
+KEGGAnnot_Count_df = data.frame(KEGG = names(KEGGAnnot_Count), Count = KEGGAnnot_Count)
+SPECIESLENGTH = length(colnames(KEGGAnnot_m))
+COREMETABOLISM = KEGGAnnot_Count[which(KEGGAnnot_Count >= SPECIESLENGTH)]
+ 
+write.csv(names(COREMETABOLISM), file = paste("CoreMetabolicGenes_", Sys.Date(), ".csv", sep = ""))
+
+Y1000Variable_Edge_list = list()
+for(i in 1:length(Y1000_list)){
+	Y1000Variable_Edge_list[[i]] = list()
+	TEMPDATA = unique(Y1000_list[[i]]$KEGG)
+	TEMPDATA = TEMPDATA[-which(TEMPDATA$V2 %in% names(COREMETABOLISM)),]
+	TEMPKEGG = unique(TEMPDATA$V2)
+	TEMPEDGE = Y1000_ReactionEdge_df[which(Y1000_ReactionEdge_df$KEGG_A %in% TEMPKEGG & Y1000_ReactionEdge_df$KEGG_B %in% TEMPKEGG),]
+	Y1000Variable_Edge_list[[i]]$KEGG = TEMPDATA
+	Y1000Variable_Edge_list[[i]]$EdgeLists = TEMPEDGE
+}
+
+STRAINORDER2 = list()
+
+for(i in 1:length(Y1000_Edge_list)){
+	STRAINORDER2[i] = unique(Y1000Variable_Edge_list[[i]]$KEGG$PU)
+}
+
+STRAINORDER2 = unlist(STRAINORDER2)
+
+names(Y1000Variable_Edge_list) = STRAINORDER2
+
+Y1000_VariableNetworkGraphs = list()
+for(i in 1:length(Y1000_Edge_list)){
+	Y1000_VariableNetworkGraphs[[i]] = list()
+	TEMPDATA = Y1000Variable_Edge_list[[i]]$EdgeLists
+	TEMPRNXEDGE = unique(TEMPDATA[,c(1:2)])
+	TEMPKEGGEDGE = unique(TEMPDATA[,c(3,5)])
+		TEMPRNXGRAPH = graph.data.frame(unique(TEMPRNXEDGE), directed = FALSE)
+	TEMPKEGGGRAPH = graph.data.frame(unique(TEMPKEGGEDGE), directed = FALSE)
+	
+	 Y1000_VariableNetworkGraphs[[i]]$ReactionNetwork = simplify(TEMPRNXGRAPH, remove.multiple = TRUE, remove.loops = TRUE, edge.attr.comb = igraph_opt("edge.attr.comb"))
+
+	 Y1000_VariableNetworkGraphs[[i]]$KEGGNetwork = simplify(TEMPKEGGGRAPH, remove.multiple = TRUE, remove.loops = TRUE, edge.attr.comb = igraph_opt("edge.attr.comb"))
+}
+
+
+names(Y1000_VariableNetworkGraphs) = STRAINORDER
+
+Y1000Variable_Edge_Counts = data.frame(PU = character(),
+							Species = character(),
+							RnxEdgeCount = numeric(), 
+							KEGGEdgeCount = numeric(), stringsAsFactors = FALSE)
+							
+for(i in 1:length(Y1000Variable_Edge_list)){
+	TEMP = unique( as_edgelist( Y1000_VariableNetworkGraphs[[i]]$ReactionNetwork))
+	TEMP2 = unique( as_edgelist( Y1000_VariableNetworkGraphs[[i]]$KEGGNetwork))
+	Y1000Variable_Edge_Counts[i,1] = unique(Y1000Variable_Edge_list[[i]]$KEGG$PU)
+	Y1000Variable_Edge_Counts[i,2] = unique(Y1000Variable_Edge_list[[i]]$KEGG$Species)
+	Y1000Variable_Edge_Counts[i,3] = nrow(TEMP)
+	Y1000Variable_Edge_Counts[i,4] = nrow(TEMP2)
+}
+
+Y1000Variable_Modularity_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Modularity = numeric(),
+							KEGG_Modularity = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000Variable_Edge_list)){
+	TEMP = Y1000_VariableNetworkGraphs[[i]]$ReactionNetwork
+	wcPos = walktrap.community(TEMP)
+	TEMP2 = Y1000_VariableNetworkGraphs[[i]]$KEGGNetwork
+	wcPos2 = walktrap.community(TEMP2)
+	Y1000Variable_Modularity_df[k,1] = unique(Y1000Variable_Edge_list[[i]]$KEGG$PU)
+	Y1000Variable_Modularity_df[k,2] = unique(Y1000Variable_Edge_list[[i]]$KEGG$Species)
+	Y1000Variable_Modularity_df[k,3] = modularity(TEMP, membership(wcPos))
+	Y1000Variable_Modularity_df[k,4] = modularity(TEMP2, membership(wcPos2))
+	k = k+1
+}
+	
+
+Y1000Variable_Diameter_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Diameter = numeric(),
+							KEGG_Diameter = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000Variable_Edge_list)){
+	TEMP = Y1000_VariableNetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_VariableNetworkGraphs[[i]]$KEGGNetwork
+	Y1000Variable_Diameter_df[k,1] = unique(Y1000Variable_Edge_list[[i]]$KEGG$PU)
+	Y1000Variable_Diameter_df[k,2] = unique(Y1000Variable_Edge_list[[i]]$KEGG$Species)
+	Y1000Variable_Diameter_df[k,3] = diameter(TEMP)
+	Y1000Variable_Diameter_df[k,4] =  diameter(TEMP2)
+	k = k+1
+}	
+ 
+Y1000Variable_Assortativity_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Assortativity = numeric(),
+							KEGG_Assortativity = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_VariableNetworkGraphs)){
+	TEMP = Y1000_VariableNetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_VariableNetworkGraphs[[i]]$KEGGNetwork
+	Y1000Variable_Assortativity_df[k,1] = unique(Y1000Variable_Edge_list[[i]]$KEGG$PU)
+	Y1000Variable_Assortativity_df[k,2] = unique(Y1000Variable_Edge_list[[i]]$KEGG$Species)
+	Y1000Variable_Assortativity_df[k,3] = assortativity_degree(TEMP)
+	Y1000Variable_Assortativity_df[k,4] =  assortativity_degree(TEMP2)
+	k = k+1
+}	
+
+Y1000Variable_Betweenness_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Betweenness = numeric(),
+							KEGG_Betweenness = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_VariableNetworkGraphs)){
+	TEMP = Y1000_VariableNetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_VariableNetworkGraphs[[i]]$KEGGNetwork
+	Y1000Variable_Betweenness_df[k,1] = unique(Y1000Variable_Edge_list[[i]]$KEGG$PU)
+	Y1000Variable_Betweenness_df[k,2] = unique(Y1000Variable_Edge_list[[i]]$KEGG$Species)
+	Y1000Variable_Betweenness_df[k,3] = mean(edge_betweenness(TEMP))
+	Y1000Variable_Betweenness_df[k,4] =  mean(edge_betweenness(TEMP2))
+	k = k+1
+}	
+
+Y1000Variable_Density_df = data.frame(PU = character(),
+							Species = character(),
+							Rnx_Density = numeric(),
+							KEGG_Density = numeric(), stringsAsFactors = FALSE)
+							
+k = 1
+for(i in 1:length(Y1000_VariableNetworkGraphs)){
+	TEMP = Y1000_VariableNetworkGraphs[[i]]$ReactionNetwork
+	TEMP2 = Y1000_VariableNetworkGraphs[[i]]$KEGGNetwork
+	Y1000Variable_Density_df[k,1] = unique(Y1000Variable_Edge_list[[i]]$KEGG$PU)
+	Y1000Variable_Density_df[k,2] = unique(Y1000Variable_Edge_list[[i]]$KEGG$Species)
+	Y1000Variable_Density_df[k,3] = edge_density(TEMP)
+	Y1000Variable_Density_df[k,4] =  edge_density(TEMP2)
+	k = k+1
+}	
+
+
+Variable_Y1000_NetworkStats_df = cbind(Y1000Variable_Edge_Counts, Y1000Variable_Modularity_df, Y1000Variable_Diameter_df, Y1000Variable_Assortativity_df, Y1000Variable_Betweenness_df, Y1000Variable_Density_df)
+Variable_Y1000_NetworkStats_df = Variable_Y1000_NetworkStats_df[,c(1:4,7:8,11:12, 15:16,19:20,23:24)]
+ 
+ write.csv(Variable_Y1000_NetworkStats_df, file = paste("Variable_Y1000_NetworkStats_df_", Sys.Date(),".csv", sep = ""))
+ 
+ 
+ Variable_Y1000_KEGG_NetworkStats_df = Variable_Y1000_NetworkStats_df[,c(1,4,6,8,10,12,14)]
+ Variable_Y1000_KEGG_NetworkStats_df = Variable_Y1000_KEGG_NetworkStats_df[which(is.na(Variable_Y1000_KEGG_NetworkStats_df$PU) == FALSE),]
+ 
+ Variable_Y1000_Rnx_NetworkStats_df = Variable_Y1000_NetworkStats_df[,c(1,3,5,7,9,11,13)]
+ 
+ Variable_Condensed_Rnx_NetworkStats_df = melt(Variable_Y1000_Rnx_NetworkStats_df, measure.vars = c("RnxEdgeCount", "Rnx_Modularity", "Rnx_Diameter", "Rnx_Assortativity", "Rnx_Betweenness", "Rnx_Density"))
+ colnames(Variable_Condensed_Rnx_NetworkStats_df) = c("PU", "Statistic", "Value")
+ 
+ Variable_Condensed_Rnx_NetworkStats_df$Classification = rep("Normal", nrow(Variable_Condensed_Rnx_NetworkStats_df))
+ Variable_Condensed_Rnx_NetworkStats_df[which(Variable_Condensed_Rnx_NetworkStats_df$PU %in% GENERALISTS), "Classification"] = "Generalist"
+ Variable_Condensed_Rnx_NetworkStats_df[which(Variable_Condensed_Rnx_NetworkStats_df$PU %in% SPECIALISTS), "Classification"] = "Specialist"
+ 
+ write.csv(Variable_Condensed_Rnx_NetworkStats_df, file = paste("Variable_Condensed_Rnx_NetworkStats_df_", Sys.Date(),".csv", sep = ""))
+ 
+ Variable_GenSpec_Rnx_NetworkStats_df= Variable_Condensed_Rnx_NetworkStats_df[which(Variable_Condensed_Rnx_NetworkStats_df$PU %in% PhenotypedStrains),]
+ 
+ write.csv(Variable_GenSpec_Rnx_NetworkStats_df, file = paste("Variable_GenSpec_Rnx_NetworkStats_df_", Sys.Date(),".csv", sep = ""))
+ 
+ 
+ a = ggplot(Variable_GenSpec_Rnx_NetworkStats_df, aes(x = Classification, y = Value, group = Classification, fill = Classification))
+ a = a + geom_boxplot()
+ a = a + facet_wrap(.~ Statistic, scales = "free")
+ a = a + xlab("Classification") + ylab("Statistic")
+ a = a + scale_y_continuous(expand = c(0, 0))
+ a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_blank(),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold"),
+			  legend.position = "bottom"
+              )
+ggsave(paste("Variable_GenSpec_RnxStat_boxplot_", Sys.Date(),".pdf", sep = ""))
+
+
+Variable_Condensed_KEGG_NetworkStats_df = melt(Variable_Y1000_KEGG_NetworkStats_df, measure.vars = c("KEGGEdgeCount", "KEGG_Modularity", "KEGG_Diameter", "KEGG_Assortativity", "KEGG_Betweenness", "KEGG_Density"))
+ colnames(Variable_Condensed_KEGG_NetworkStats_df) = c("PU", "Statistic", "Value")
+ 
+ Variable_Condensed_KEGG_NetworkStats_df$Classification = rep("Normal", nrow(Variable_Condensed_KEGG_NetworkStats_df))
+ Variable_Condensed_KEGG_NetworkStats_df[which(Variable_Condensed_KEGG_NetworkStats_df$PU %in% GENERALISTS), "Classification"] = "Generalist"
+ Variable_Condensed_KEGG_NetworkStats_df[which(Variable_Condensed_KEGG_NetworkStats_df$PU %in% SPECIALISTS), "Classification"] = "Specialist"
+ 
+ Variable_GenSpec_KEGG_NetworkStats_df = Variable_Condensed_KEGG_NetworkStats_df[which(Variable_Condensed_KEGG_NetworkStats_df$PU %in% PhenotypedStrains),]
+ 
+ write.csv(Variable_GenSpec_KEGG_NetworkStats_df, file = paste("Variable_GenSpec_KEGG_NetworkStats_df_", Sys.Date(),".csv", sep = ""))
+ 
+ a = ggplot(Variable_Condensed_KEGG_NetworkStats_df, aes(x = Classification, y = Value, group = Classification, fill = Classification))
+ a = a + geom_boxplot()
+ a = a + facet_wrap(.~ Statistic, scales = "free")
+ a = a + xlab("Classification") + ylab("Statistic")
+ a = a + scale_y_continuous(expand = c(0, 0))
+ a = a + theme(panel.grid.major = element_blank(), 
+              panel.grid.minor = element_blank(), 
+              panel.background = element_blank(), 
+              axis.line.x = element_line(color = "black"), 
+              axis.line.y = element_line(color = "black"),
+              axis.text.x = element_blank(),
+              axis.title = element_text(face = "bold"), 
+              legend.title = element_text(face = "bold"),
+              strip.background = element_rect(fill = "white"),
+              strip.text.y = element_text(face = "bold"),
+			  legend.position = "bottom"
+              )
+ggsave(paste("Variable_GenSpec_KEGGStat_boxplot_", Sys.Date(),".pdf", sep = ""))
+
+#############################################
+### Specialist Generalized Network ##########
+
+SPECIALISTS = GenSpec_df[which(GenSpec_df$Classification == "Specialist"), "Strain"]
+
+SPECSTR_ORDER = which(STRAINORDER %in% SPECIALIST)
+SPECIALISTS = STRAINORDER[SPECSTR_ORDER]
+
+Specialists_Edge = Y1000_Edge_list[SPECSTR_ORDER]
+
+Specialist_Edge_df = data.frame()
+for(i in 1:length(Specialists_Edge)){
+	Specialist_Edge_df = unique(rbind(Specialist_Edge_df, Specialists_Edge[[i]]$EdgeLists))
+}
+
+write.csv(Specialist_Edge_df, file = paste("Specialist_Edge_df_", Sys.Date(),".csv", sep = ""))
+ 
+SpecialistReaction_Edge = unique(Specialist_Edge_df[,c(1:2)])
+SpecialistKEGG_Edge = unique(Specialist_Edge_df[,c(3,5)])
+
+REACTION = unique(c(as.character(SpecialistReaction_Edge$Reaction_A), as.character(SpecialistReaction_Edge$Reaction_B)))
+
+SpecialistRnx_m = matrix(0, nrow = length(REACTION), ncol = length(SPECIALISTS))
+rownames(SpecialistRnx_m) = REACTION
+colnames(SpecialistRnx_m) = SPECIALISTS
+
+for(i in 1:length(REACTION)){
+	TEMPLIST = list()
+	for(j in 1:length(SPECIALISTS)){
+		TEMPLIST[[j]] = list()
+		TEMP = unique(c(as.character(unique(Specialists_Edge[[j]]$EdgeList[,1])), as.character(unique(Specialists_Edge[[j]]$EdgeList[,2]))))
+		TEMPLIST[[j]] = length(which(TEMP %in% REACTION[[i]]))
+	}
+	SpecialistRnx_m[i,] = unlist(TEMPLIST)
+	print(i)
+}
+
+write.csv(SpecialistRnx_m, file = paste("SpecialistRnx_m_", Sys.Date(),".csv", sep = ""))
+
+RnxSpecCount_df = data.frame(Reactions = rownames(SpecialistRnx_m), Specialist_Count = rowSums(SpecialistRnx_m))
+RnxSpecCount_df$Proportion = RnxSpecCount_df$Specialist_Count/length(SPECIALISTS)
+
+
+write.csv(RnxSpecCount_df, file = paste("RnxSpecCount_df_", Sys.Date(),".csv", sep = ""))
+
+KEGG = unique(c(as.character(SpecialistKEGG_Edge$KEGG_A, SpecialistKEGG_Edge$KEGG_B)))
+
+SpecialistKEGG_m = matrix(0, nrow = length(KEGG), ncol = length(SPECIALISTS))
+rownames(SpecialistKEGG_m) = KEGG
+colnames(SpecialistKEGG_m) = SPECIALISTS
+
+for(i in 1:length(KEGG)){
+	TEMPLIST = list()
+	for(j in 1:length(SPECIALISTS)){
+		TEMPLIST[[j]] = list()
+		TEMP = unique(c(as.character(unique(Specialists_Edge[[j]]$EdgeList[,3])), as.character(unique(Specialists_Edge[[j]]$EdgeList[,5]))))
+		TEMPLIST[[j]] = length(which(TEMP %in% KEGG[[i]]))
+	}
+	SpecialistKEGG_m[i,] = unlist(TEMPLIST)
+	print(i)
+}
+
+write.csv(SpecialistKEGG_m, file = paste("SpecialistKEGG_m_", Sys.Date(),".csv", sep = ""))
+
+KEGGSpecCount_df = data.frame(KEGG = rownames(SpecialistKEGG_m), Specialist_Count = rowSums(SpecialistKEGG_m))
+KEGGSpecCount_df$Proportion = KEGGSpecCount_df$Specialist_Count/length(SPECIALISTS)
+
+write.csv(KEGGSpecCount_df, file = paste("KEGGSpecCount_df_", Sys.Date(),".csv", sep = ""))
+
+
+##### Community Networks without Core Metabolism #####
+NoCore_GeneralistKEGG_Edge = GeneralistKEGG_Edge[-which(GeneralistKEGG_Edge$KEGG_A %in% names(COREMETABOLISM) | GeneralistKEGG_Edge$KEGG_B %in% names(COREMETABOLISM)),]
+
+NoCore_Gen_g = graph.data.frame(NoCore_GeneralistKEGG_Edge, directed = FALSE)
+NoCore_Gen_g = simplify(NoCore_Gen_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+NoCore_Gen_c1 = cluster_louvain(NoCore_Gen_g)
+#c1 = cluster_fast_greedy(g)
+
+NoCore_GenmembershipCount_df = data.frame(membership = numeric(),
+							Count = numeric()
+							)
+
+for(i in 1:max(membership(NoCore_Gen_c1))){
+	NoCore_GenmembershipCount_df[i,1] = i
+	NoCore_GenmembershipCount_df[i,2] = length(which(membership(NoCore_Gen_c1) == i))
+}
+
+
+NoCore_GenMembershipVector = membership(NoCore_Gen_c1)
+NoCore_MEMBERSHIP = unique(NoCore_GenmembershipCount_df$membership)
+NoCore_GenMembership_list = list()
+for(i in 1:length(NoCore_MEMBERSHIP)){
+	NoCore_GenMembership_list[[i]] = list()
+	NoCore_GenMembership_list[[i]]$Members = names(NoCore_GenMembershipVector)[which(NoCore_GenMembershipVector == NoCore_MEMBERSHIP[[i]])]
+}
+
+NoCore_Simplified_GenEdge = data.frame( get.edgelist(NoCore_Gen_g))
+colnames(NoCore_Simplified_GenEdge) = c("KEGG_A", "KEGG_B")
+
+
+names(NoCore_GenMembership_list) = NoCore_MEMBERSHIP
+
+
+
+NoCore_GenMember_m = matrix(0, nrow = length(NoCore_MEMBERSHIP), ncol = length(NoCore_MEMBERSHIP))
+colnames(NoCore_GenMember_m) = NoCore_MEMBERSHIP
+rownames(NoCore_GenMember_m) = NoCore_MEMBERSHIP
+
+for(i in 1:(length(NoCore_GenMembership_list))){
+	for(j in 1:length(NoCore_GenMembership_list)){
+		TEMPA = NoCore_GenMembership_list[[i]]$Members
+		TEMPB = NoCore_GenMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(NoCore_Simplified_GenEdge$KEGG_A %in% TEMPA & NoCore_Simplified_GenEdge$KEGG_B %in% TEMPB | NoCore_Simplified_GenEdge$KEGG_A %in% TEMPB & NoCore_Simplified_GenEdge$KEGG_B %in% TEMPA))
+		NoCore_GenMember_m[i,j] = TEMPCOUNT
+	}
+}
+
+diag(NoCore_GenMember_m) <- NA
+
+NoCore_GenMemSums_vector = rowSums(NoCore_GenMember_m, na.rm = TRUE)
+NoCore_GenMemSums_df = data.frame(Members = names(NoCore_GenMemSums_vector), Count = NoCore_GenMemSums_vector)
+
+
+NoCore_GenMembership_Edge = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(NoCore_GenMembership_list)-1)){
+	for(j in (i+1):length(NoCore_GenMembership_list)){
+		TEMPA = NoCore_GenMembership_list[[i]]$Members
+		TEMPB = NoCore_GenMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(NoCore_Simplified_GenEdge$KEGG_A %in% TEMPA & NoCore_Simplified_GenEdge$KEGG_B %in% TEMPB | NoCore_Simplified_GenEdge$KEGG_A %in% TEMPB & NoCore_Simplified_GenEdge$KEGG_B %in% TEMPA))
+		NoCore_GenMembership_Edge[k,1] = i
+		NoCore_GenMembership_Edge[k,2] = j
+		NoCore_GenMembership_Edge[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+NoCore_GenMembership_Edge = NoCore_GenMembership_Edge[which(NoCore_GenMembership_Edge$Count > 0), ]
+
+NoCore_NoAttach = NoCore_GenMemSums_df[which(NoCore_GenMemSums_df$Count == 0), "Members"]
+
+k = nrow(NoCore_GenMembership_Edge) + 1
+for(i in 1:length(NoCore_NoAttach)){
+	NoCore_GenMembership_Edge[k,1] = NoCore_NoAttach[[i]]
+	NoCore_GenMembership_Edge[k,2] = NoCore_NoAttach[[i]]
+	NoCore_GenMembership_Edge[k,3] = 1
+	k = k + 1
+}
+
+NoCore_GENMEMBERKEEP = unique(c(NoCore_GenMembership_Edge$Edge_A, NoCore_GenMembership_Edge$Edge_B))
+NoCore_GenmembershipCount_df2 = NoCore_GenmembershipCount_df[which(NoCore_GenmembershipCount_df$membership %in% NoCore_GENMEMBERKEEP),]
+
+NoCore_GenMembershipInfo = NoCore_GenmembershipCount_df2
+
+NoCore_GenMembershipInfo$Size = rep(0, nrow(NoCore_GenMembershipInfo))
+NoCore_GenMembershipInfo$Size = ((NoCore_GenMembershipInfo$Count)/10)
+NoCore_GenMembershipInfo[which(NoCore_GenMembershipInfo$Size < 1), "Size"] = 1
+
+NoCore_GenMembership_Edge$VWidth = rep(0, nrow(NoCore_GenMembership_Edge))
+NoCore_GenMembership_Edge[which(NoCore_GenMembership_Edge$Count < 10), "VWidth"] = NoCore_GenMembership_Edge[which(NoCore_GenMembership_Edge$Count < 10), "Count"]
+NoCore_GenMembership_Edge[which(NoCore_GenMembership_Edge$Count >= 100 & NoCore_GenMembership_Edge$Count < 1000), "VWidth"] = 7.5
+NoCore_GenMembership_Edge[which(NoCore_GenMembership_Edge$Count >= 10 & NoCore_GenMembership_Edge$Count < 100), "VWidth"] = 5
+NoCore_GenMembership_Edge[which(NoCore_GenMembership_Edge$Count >= 1000), "VWidth"] = 10
+
+NoCore_GenCommedgeWidth = NoCore_GenMembership_Edge$VWidth
+
+
+NoCore_GenComm_g = graph.data.frame(NoCore_GenMembership_Edge, directed = FALSE, vertices = NoCore_GenMembershipInfo)
+NoCore_GenComm_g = simplify(NoCore_GenComm_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(NoCore_GenComm_g))
+maxC = rep(Inf, vcount(NoCore_GenComm_g))
+minC[1] <- maxC[1] <- 0
+
+NoCore_GenComm_co = layout_with_fr(NoCore_GenComm_g, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+NoCore_GenComm_co = layout_with_kk(NoCore_GenComm_g)
+
+
+NoCore_GenComm_NodeSize = (V(NoCore_GenComm_g)$Size + 25)
+NoCore_GenComm_c1 = cluster_louvain(NoCore_GenComm_g, weights = NoCore_GenComm_g$Count)
+#GenComm_c1 = cluster_fast_greedy(GenComm_g)
+
+pdf(paste("NoCore_Generalist_Community_Network_", Sys.Date(), ".pdf", sep = ""), height = 20, width = 20, useDingbats = FALSE)
+	plot(NoCore_GenComm_c1, NoCore_GenComm_g, 
+		layout= NoCore_GenComm_co, 
+		col = membership(NoCore_GenComm_c1),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(NoCore_GenComm_co[,1]), 
+		ylim=range(NoCore_GenComm_co[,2]),
+		vertex.label.color = "black", 
+		vertex.size = NoCore_GenComm_NodeSize,
+		vertex.label.cex = 1,
+		edge.width = NoCore_GenCommedgeWidth
+	)
+
+dev.off()
+
+NoCore_GenMembership_Edge2 = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(NoCore_GenMembership_list)-1)){
+	for(j in (i+1):length(NoCore_GenMembership_list)){
+		TEMPA = NoCore_GenMembership_list[[i]]$Members
+		TEMPB = NoCore_GenMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(NoCore_Simplified_GenEdge$KEGG_A %in% TEMPA & NoCore_Simplified_GenEdge$KEGG_B %in% TEMPB | NoCore_Simplified_GenEdge$KEGG_A %in% TEMPB & NoCore_Simplified_GenEdge$KEGG_B %in% TEMPA))
+		NoCore_GenMembership_Edge2[k,1] = i
+		NoCore_GenMembership_Edge2[k,2] = j
+		NoCore_GenMembership_Edge2[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+NoCore_GenMembership_Edge2 = NoCore_GenMembership_Edge2[which(NoCore_GenMembership_Edge2$Count > 0), ]
+
+NoCore_GENMEMBERKEEP2 = unique(c(NoCore_GenMembership_Edge2$Edge_A, NoCore_GenMembership_Edge2$Edge_B))
+NoCore_GenmembershipCount_df3 = NoCore_GenmembershipCount_df[which(NoCore_GenmembershipCount_df$membership %in% NoCore_GENMEMBERKEEP2),]
+
+NoCore_GenMembershipInfo2 = NoCore_GenmembershipCount_df3
+
+NoCore_GenMembershipInfo2$Size = rep(0, nrow(NoCore_GenMembershipInfo2))
+NoCore_GenMembershipInfo2$Size = ((NoCore_GenMembershipInfo2$Count)/10)
+NoCore_GenMembershipInfo2[which(NoCore_GenMembershipInfo2$Size < 1), "Size"] = 1
+
+NoCore_GenMembership_Edge2$VWidth = rep(0, nrow(NoCore_GenMembership_Edge2))
+NoCore_GenMembership_Edge2[which(NoCore_GenMembership_Edge2$Count < 10), "VWidth"] = NoCore_GenMembership_Edge2[which(NoCore_GenMembership_Edge2$Count < 10), "Count"]
+NoCore_GenMembership_Edge2[which(NoCore_GenMembership_Edge2$Count >= 100 & NoCore_GenMembership_Edge2$Count < 1000), "VWidth"] = 7.5
+NoCore_GenMembership_Edge2[which(NoCore_GenMembership_Edge2$Count >= 10 & NoCore_GenMembership_Edge2$Count < 100), "VWidth"] = 5
+NoCore_GenMembership_Edge2[which(NoCore_GenMembership_Edge2$Count >= 1000), "VWidth"] = 10
+
+
+NoCore_GenCommedgeWidth2 = NoCore_GenMembership_Edge2$VWidth
+
+
+NoCore_GenComm_g2 = graph.data.frame(NoCore_GenMembership_Edge2, directed = FALSE, vertices = NoCore_GenMembershipInfo2)
+NoCore_GenComm_g2 = simplify(NoCore_GenComm_g2,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(NoCore_GenComm_g2))
+maxC = rep(Inf, vcount(NoCore_GenComm_g2))
+minC[1] <- maxC[1] <- 0
+
+NoCore_GenComm_co2 = layout_with_fr(NoCore_GenComm_g2, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+#GenComm_co2 = layout_with_kk(GenComm_g2)
+
+
+NoCore_GenComm_NodeSize2 = (V(NoCore_GenComm_g2)$Size + 10)
+NoCore_GenComm_c12 = cluster_louvain(NoCore_GenComm_g2, weights = NoCore_GenComm_g2$Count)
+#GenComm_c1 = cluster_fast_greedy(GenComm_g)
+
+pdf(paste("NoCore_Generalist_Community_Network2_", Sys.Date(), ".pdf", sep = ""), useDingbats = FALSE)
+	plot(NoCore_GenComm_c12, NoCore_GenComm_g2, 
+		layout= NoCore_GenComm_co2, 
+		col = membership(NoCore_GenComm_c12),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(NoCore_GenComm_co2[,1]), 
+		ylim=range(NoCore_GenComm_co2[,2]),
+		vertex.label.color = "black", 
+		vertex.size = NoCore_GenComm_NodeSize2,
+		vertex.label.cex = 1,
+		edge.width = NoCore_GenCommedgeWidth2
+	)
+
+dev.off()
+
+
+write.csv(capture.output(NoCore_GenMembership_list[NoCore_GENMEMBERKEEP2]), file = paste("NoCore_GeneralistConnectedCommunities_", Sys.Date(),".csv", sep = ""))
+
+
+NoCore_GeneralistCommunity_KEGG = data.frame(Community = numeric(), KEGG = character(), stringsAsFactors = FALSE)
+k = 1
+for(i in 1:length(NoCore_GENMEMBERKEEP2)){
+	TEMP =  NoCore_GenMembership_list[NoCore_GENMEMBERKEEP2[[i]]][[1]]$Members
+	for(j in 1:length(TEMP)){
+		NoCore_GeneralistCommunity_KEGG[k, 1] = NoCore_GENMEMBERKEEP2[[i]]
+		NoCore_GeneralistCommunity_KEGG[k, 2] = TEMP[[j]]
+		k = k+1
+	}
+}
+
+write.csv(NoCore_GeneralistCommunity_KEGG, file = paste("NoCore_GeneralistCommunity_KEGG_", Sys.Date(),".csv", sep = ""))
+
+NoCore_SINGLEGENERALIST = NoCore_GenmembershipCount_df[-which(NoCore_GenmembershipCount_df$membership %in% NoCore_GENMEMBERKEEP2),"membership"]
+
+NoCore_Generalist_Single_Community_KEGG = data.frame(Community = numeric(), KEGG = character(), stringsAsFactors = FALSE)
+k = 1
+for(i in 1:length(NoCore_SINGLEGENERALIST)){
+	TEMP =  NoCore_GenMembership_list[NoCore_SINGLEGENERALIST[[i]]][[1]]$Members
+	for(j in 1:length(TEMP)){
+		NoCore_Generalist_Single_Community_KEGG[k, 1] = NoCore_SINGLEGENERALIST[[i]]
+		NoCore_Generalist_Single_Community_KEGG[k, 2] = TEMP[[j]]
+		k = k+1
+	}
+}
+
+write.csv(NoCore_Generalist_Single_Community_KEGG, file = paste("NoCore_Generalist_Single_Community_KEGG_", Sys.Date(),".csv", sep = ""))
+
+# Specialist
+NoCore_SpecialistKEGG_Edge = SpecialistKEGG_Edge[-which(SpecialistKEGG_Edge$KEGG_A %in% names(COREMETABOLISM) | SpecialistKEGG_Edge$KEGG_B %in% names(COREMETABOLISM)),]
+
+NoCore_Spec_g = graph.data.frame(NoCore_SpecialistKEGG_Edge, directed = FALSE)
+NoCore_Spec_g = simplify(NoCore_Spec_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+NoCore_Spec_c1 = cluster_louvain(NoCore_Spec_g)
+#c1 = cluster_fast_greedy(g)
+
+NoCore_SpecmembershipCount_df = data.frame(membership = numeric(),
+							Count = numeric()
+							)
+
+for(i in 1:max(membership(NoCore_Spec_c1))){
+	NoCore_SpecmembershipCount_df[i,1] = i
+	NoCore_SpecmembershipCount_df[i,2] = length(which(membership(NoCore_Spec_c1) == i))
+}
+
+
+NoCore_SpecMembershipVector = membership(NoCore_Spec_c1)
+NoCore_MEMBERSHIP = unique(NoCore_SpecmembershipCount_df$membership)
+NoCore_SpecMembership_list = list()
+for(i in 1:length(NoCore_MEMBERSHIP)){
+	NoCore_SpecMembership_list[[i]] = list()
+	NoCore_SpecMembership_list[[i]]$Members = names(NoCore_SpecMembershipVector)[which(NoCore_SpecMembershipVector == NoCore_MEMBERSHIP[[i]])]
+}
+
+NoCore_Simplified_SpecEdge = data.frame( get.edgelist(NoCore_Spec_g))
+colnames(NoCore_Simplified_SpecEdge) = c("KEGG_A", "KEGG_B")
+
+
+names(NoCore_SpecMembership_list) = NoCore_MEMBERSHIP
+
+
+
+NoCore_SpecMember_m = matrix(0, nrow = length(NoCore_MEMBERSHIP), ncol = length(NoCore_MEMBERSHIP))
+colnames(NoCore_SpecMember_m) = NoCore_MEMBERSHIP
+rownames(NoCore_SpecMember_m) = NoCore_MEMBERSHIP
+
+for(i in 1:(length(NoCore_SpecMembership_list))){
+	for(j in 1:length(NoCore_SpecMembership_list)){
+		TEMPA = NoCore_SpecMembership_list[[i]]$Members
+		TEMPB = NoCore_SpecMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(NoCore_Simplified_SpecEdge$KEGG_A %in% TEMPA & NoCore_Simplified_SpecEdge$KEGG_B %in% TEMPB | NoCore_Simplified_SpecEdge$KEGG_A %in% TEMPB & NoCore_Simplified_SpecEdge$KEGG_B %in% TEMPA))
+		NoCore_SpecMember_m[i,j] = TEMPCOUNT
+	}
+}
+
+diag(NoCore_SpecMember_m) <- NA
+
+NoCore_SpecMemSums_vector = rowSums(NoCore_SpecMember_m, na.rm = TRUE)
+NoCore_SpecMemSums_df = data.frame(Members = names(NoCore_SpecMemSums_vector), Count = NoCore_SpecMemSums_vector)
+
+
+NoCore_SpecMembership_Edge = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(NoCore_SpecMembership_list)-1)){
+	for(j in (i+1):length(NoCore_SpecMembership_list)){
+		TEMPA = NoCore_SpecMembership_list[[i]]$Members
+		TEMPB = NoCore_SpecMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(NoCore_Simplified_SpecEdge$KEGG_A %in% TEMPA & NoCore_Simplified_SpecEdge$KEGG_B %in% TEMPB | NoCore_Simplified_SpecEdge$KEGG_A %in% TEMPB & NoCore_Simplified_SpecEdge$KEGG_B %in% TEMPA))
+		NoCore_SpecMembership_Edge[k,1] = i
+		NoCore_SpecMembership_Edge[k,2] = j
+		NoCore_SpecMembership_Edge[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+NoCore_SpecMembership_Edge = NoCore_SpecMembership_Edge[which(NoCore_SpecMembership_Edge$Count > 0), ]
+
+NoCore_NoAttach = NoCore_SpecMemSums_df[which(NoCore_SpecMemSums_df$Count == 0), "Members"]
+
+k = nrow(NoCore_SpecMembership_Edge) + 1
+for(i in 1:length(NoCore_NoAttach)){
+	NoCore_SpecMembership_Edge[k,1] = NoCore_NoAttach[[i]]
+	NoCore_SpecMembership_Edge[k,2] = NoCore_NoAttach[[i]]
+	NoCore_SpecMembership_Edge[k,3] = 1
+	k = k + 1
+}
+
+NoCore_SPECMEMBERKEEP = unique(c(NoCore_SpecMembership_Edge$Edge_A, NoCore_SpecMembership_Edge$Edge_B))
+NoCore_SpecmembershipCount_df2 = NoCore_SpecmembershipCount_df[which(NoCore_SpecmembershipCount_df$membership %in% NoCore_SPECMEMBERKEEP),]
+
+NoCore_SpecMembershipInfo = NoCore_SpecmembershipCount_df2
+
+NoCore_SpecMembershipInfo$Size = rep(0, nrow(NoCore_SpecMembershipInfo))
+NoCore_SpecMembershipInfo$Size = ((NoCore_SpecMembershipInfo$Count)/10)
+NoCore_SpecMembershipInfo[which(NoCore_SpecMembershipInfo$Size < 1), "Size"] = 1
+
+NoCore_SpecMembership_Edge$VWidth = rep(0, nrow(NoCore_SpecMembership_Edge))
+NoCore_SpecMembership_Edge[which(NoCore_SpecMembership_Edge$Count < 10), "VWidth"] = NoCore_SpecMembership_Edge[which(NoCore_SpecMembership_Edge$Count < 10), "Count"]
+NoCore_SpecMembership_Edge[which(NoCore_SpecMembership_Edge$Count >= 100 & NoCore_SpecMembership_Edge$Count < 1000), "VWidth"] = 7.5
+NoCore_SpecMembership_Edge[which(NoCore_SpecMembership_Edge$Count >= 10 & NoCore_SpecMembership_Edge$Count < 100), "VWidth"] = 5
+NoCore_SpecMembership_Edge[which(NoCore_SpecMembership_Edge$Count >= 1000), "VWidth"] = 10
+
+NoCore_SpecCommedgeWidth = NoCore_SpecMembership_Edge$VWidth
+
+
+NoCore_SpecComm_g = graph.data.frame(NoCore_SpecMembership_Edge, directed = FALSE, vertices = NoCore_SpecMembershipInfo)
+NoCore_SpecComm_g = simplify(NoCore_SpecComm_g,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(NoCore_SpecComm_g))
+maxC = rep(Inf, vcount(NoCore_SpecComm_g))
+minC[1] <- maxC[1] <- 0
+
+NoCore_SpecComm_co = layout_with_fr(NoCore_SpecComm_g, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+NoCore_SpecComm_co = layout_with_kk(NoCore_SpecComm_g)
+
+
+NoCore_SpecComm_NodeSize = (V(NoCore_SpecComm_g)$Size + 25)
+NoCore_SpecComm_c1 = cluster_louvain(NoCore_SpecComm_g, weights = NoCore_SpecComm_g$Count)
+#SpecComm_c1 = cluster_fast_greedy(SpecComm_g)
+
+pdf(paste("NoCore_Specialist_Community_Network_", Sys.Date(), ".pdf", sep = ""), height = 20, width = 20, useDingbats = FALSE)
+	plot(NoCore_SpecComm_c1, NoCore_SpecComm_g, 
+		layout= NoCore_SpecComm_co, 
+		col = membership(NoCore_SpecComm_c1),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(NoCore_SpecComm_co[,1]), 
+		ylim=range(NoCore_SpecComm_co[,2]),
+		vertex.label.color = "black", 
+		vertex.size = NoCore_SpecComm_NodeSize,
+		vertex.label.cex = 1,
+		edge.width = NoCore_SpecCommedgeWidth
+	)
+
+dev.off()
+
+NoCore_SpecMembership_Edge2 = data.frame(Edge_A = numeric(),
+								Edge_B = numeric(),
+								Count = numeric())
+k = 1								
+for(i in 1:(length(NoCore_SpecMembership_list)-1)){
+	for(j in (i+1):length(NoCore_SpecMembership_list)){
+		TEMPA = NoCore_SpecMembership_list[[i]]$Members
+		TEMPB = NoCore_SpecMembership_list[[j]]$Members
+		TEMPCOUNT = length(which(NoCore_Simplified_SpecEdge$KEGG_A %in% TEMPA & NoCore_Simplified_SpecEdge$KEGG_B %in% TEMPB | NoCore_Simplified_SpecEdge$KEGG_A %in% TEMPB & NoCore_Simplified_SpecEdge$KEGG_B %in% TEMPA))
+		NoCore_SpecMembership_Edge2[k,1] = i
+		NoCore_SpecMembership_Edge2[k,2] = j
+		NoCore_SpecMembership_Edge2[k,3] = TEMPCOUNT
+		k = k + 1
+	}
+}
+
+NoCore_SpecMembership_Edge2 = NoCore_SpecMembership_Edge2[which(NoCore_SpecMembership_Edge2$Count > 0), ]
+
+NoCore_SPECMEMBERKEEP2 = unique(c(NoCore_SpecMembership_Edge2$Edge_A, NoCore_SpecMembership_Edge2$Edge_B))
+NoCore_SpecmembershipCount_df3 = NoCore_SpecmembershipCount_df[which(NoCore_SpecmembershipCount_df$membership %in% NoCore_SPECMEMBERKEEP2),]
+
+NoCore_SpecMembershipInfo2 = NoCore_SpecmembershipCount_df3
+
+NoCore_SpecMembershipInfo2$Size = rep(0, nrow(NoCore_SpecMembershipInfo2))
+NoCore_SpecMembershipInfo2$Size = ((NoCore_SpecMembershipInfo2$Count)/10)
+NoCore_SpecMembershipInfo2[which(NoCore_SpecMembershipInfo2$Size < 1), "Size"] = 1
+
+NoCore_SpecMembership_Edge2$VWidth = rep(0, nrow(NoCore_SpecMembership_Edge2))
+NoCore_SpecMembership_Edge2[which(NoCore_SpecMembership_Edge2$Count < 10), "VWidth"] = NoCore_SpecMembership_Edge2[which(NoCore_SpecMembership_Edge2$Count < 10), "Count"]
+NoCore_SpecMembership_Edge2[which(NoCore_SpecMembership_Edge2$Count >= 100 & NoCore_SpecMembership_Edge2$Count < 1000), "VWidth"] = 7.5
+NoCore_SpecMembership_Edge2[which(NoCore_SpecMembership_Edge2$Count >= 10 & NoCore_SpecMembership_Edge2$Count < 100), "VWidth"] = 5
+NoCore_SpecMembership_Edge2[which(NoCore_SpecMembership_Edge2$Count >= 1000), "VWidth"] = 10
+
+
+NoCore_SpecCommedgeWidth2 = NoCore_SpecMembership_Edge2$VWidth
+
+
+NoCore_SpecComm_g2 = graph.data.frame(NoCore_SpecMembership_Edge2, directed = FALSE, vertices = NoCore_SpecMembershipInfo2)
+NoCore_SpecComm_g2 = simplify(NoCore_SpecComm_g2,
+  remove.multiple = TRUE,
+  remove.loops = TRUE,
+  edge.attr.comb = igraph_opt("edge.attr.comb")
+)
+
+minC = rep(-Inf, vcount(NoCore_SpecComm_g2))
+maxC = rep(Inf, vcount(NoCore_SpecComm_g2))
+minC[1] <- maxC[1] <- 0
+
+NoCore_SpecComm_co2 = layout_with_fr(NoCore_SpecComm_g2, minx = minC, maxx = maxC, miny = minC, maxy = maxC, grid= "nogrid")
+#SpecComm_co2 = layout_with_kk(SpecComm_g2)
+
+
+NoCore_SpecComm_NodeSize2 = (V(NoCore_SpecComm_g2)$Size + 10)
+NoCore_SpecComm_c12 = cluster_louvain(NoCore_SpecComm_g2, weights = NoCore_SpecComm_g2$Count)
+#SpecComm_c1 = cluster_fast_greedy(SpecComm_g)
+
+pdf(paste("NoCore_Specialist_Community_Network2_", Sys.Date(), ".pdf", sep = ""), useDingbats = FALSE)
+	plot(NoCore_SpecComm_c12, NoCore_SpecComm_g2, 
+		layout= NoCore_SpecComm_co2, 
+		col = membership(NoCore_SpecComm_c12),
+		mark.col = NA,
+		mark.border = NA, 
+		rescale=F,
+		asp = 0,
+		xlim=range(NoCore_SpecComm_co2[,1]), 
+		ylim=range(NoCore_SpecComm_co2[,2]),
+		vertex.label.color = "black", 
+		vertex.size = NoCore_SpecComm_NodeSize2,
+		vertex.label.cex = 1,
+		edge.width = NoCore_SpecCommedgeWidth2
+	)
+
+dev.off()
+
+
+write.csv(capture.output(NoCore_SpecMembership_list[NoCore_SPECMEMBERKEEP2]), file = paste("NoCore_SpecialistConnectedCommunities_", Sys.Date(),".csv", sep = ""))
+
+
+NoCore_SpecialistCommunity_KEGG = data.frame(Community = numeric(), KEGG = character(), stringsAsFactors = FALSE)
+k = 1
+for(i in 1:length(NoCore_SPECMEMBERKEEP2)){
+	TEMP =  NoCore_SpecMembership_list[NoCore_SPECMEMBERKEEP2[[i]]][[1]]$Members
+	for(j in 1:length(TEMP)){
+		NoCore_SpecialistCommunity_KEGG[k, 1] = NoCore_SPECMEMBERKEEP2[[i]]
+		NoCore_SpecialistCommunity_KEGG[k, 2] = TEMP[[j]]
+		k = k+1
+	}
+}
+
+write.csv(NoCore_SpecialistCommunity_KEGG, file = paste("NoCore_SpecialistCommunity_KEGG_", Sys.Date(), ".csv", sep = ""))
+
+NoCore_SINGLESPECIALIST = NoCore_SpecmembershipCount_df[-which(NoCore_SpecmembershipCount_df$membership %in% NoCore_SPECMEMBERKEEP2),"membership"]
+
+NoCore_Specialist_Single_Community_KEGG = data.frame(Community = numeric(), KEGG = character(), stringsAsFactors = FALSE)
+k = 1
+for(i in 1:length(NoCore_SINGLESPECIALIST)){
+	TEMP =  NoCore_SpecMembership_list[NoCore_SINGLESPECIALIST[[i]]][[1]]$Members
+	for(j in 1:length(TEMP)){
+		NoCore_Specialist_Single_Community_KEGG[k, 1] = NoCore_SINGLESPECIALIST[[i]]
+		NoCore_Specialist_Single_Community_KEGG[k, 2] = TEMP[[j]]
+		k = k+1
+	}
+}
+
+write.csv(NoCore_Specialist_Single_Community_KEGG, file = paste("NoCore_Specialist_Single_Community_KEGG_", Sys.Date(), ".csv", sep = ""))
+
+save(list = ls(), file = paste("GenSpec_KEGGAnalysis", Sys.Date(), ".rda", sep = ""))
